@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
+import RealMap from "./RealMap.jsx";
+import { fetchRealStations } from "./openChargeMap.js";
 import { PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
 import {
   Zap, MapPin, Battery, Clock, Leaf, IndianRupee, Route, Star,
@@ -139,46 +141,6 @@ function Chip({ children, tone = "default" }) {
   );
 }
 
-function CircuitMap({ stations, selectedId, onSelect }) {
-  return (
-    <svg viewBox="0 0 100 100" style={{ width: "100%", height: 320, display: "block" }}>
-      <defs>
-        <pattern id="grid" width="8" height="8" patternUnits="userSpaceOnUse">
-          <path d="M 8 0 L 0 0 0 8" fill="none" stroke="#16223A" strokeWidth="0.3" />
-        </pattern>
-      </defs>
-      <rect width="100" height="100" fill="url(#grid)" />
-      {stations.map(s => (
-        <line key={"l" + s.id} x1="50" y1="50" x2={s.x} y2={s.y}
-          stroke={s.id === selectedId ? "#4FC3F7" : "#243456"}
-          strokeWidth={s.id === selectedId ? 0.6 : 0.4} strokeDasharray="1.5,1.2" />
-      ))}
-      <circle cx="50" cy="50" r="3.4" fill="#0A0F1A" stroke="#4FC3F7" strokeWidth="0.6" />
-      <circle cx="50" cy="50" r="1.3" fill="#4FC3F7" />
-      <text x="50" y="57" textAnchor="middle" fill="#7C8AAE" fontSize="3.4" fontFamily="'JetBrains Mono', monospace">YOU</text>
-      {stations.map(s => {
-        const col = renewColor(s.renewablePct);
-        const isSel = s.id === selectedId;
-        const busy = s.availablePorts === 0;
-        return (
-          <g key={s.id} onClick={() => onSelect(s.id)} style={{ cursor: "pointer" }}>
-            <circle cx={s.x} cy={s.y} r={isSel ? 4.6 : 3.6} fill="none" stroke={col} strokeWidth="0.4" opacity="0.5">
-              {!busy && <animate attributeName="r" values={`${isSel ? 4.6 : 3.6};${isSel ? 7.5 : 6.2};${isSel ? 4.6 : 3.6}`} dur="2.4s" repeatCount="indefinite" />}
-              {!busy && <animate attributeName="opacity" values="0.5;0;0.5" dur="2.4s" repeatCount="indefinite" />}
-            </circle>
-            <circle cx={s.x} cy={s.y} r={isSel ? 2.6 : 2.1} fill={busy ? "#1A1F2E" : "#0A0F1A"} stroke={col} strokeWidth={isSel ? 0.9 : 0.6} />
-            <circle cx={s.x} cy={s.y} r="0.7" fill={col} />
-            <text x={s.x} y={s.y - (isSel ? 6.5 : 5)} textAnchor="middle" fill={isSel ? "#EAF0FB" : "#7C8AAE"}
-              fontSize={isSel ? 3.0 : 2.6} fontFamily="'Space Grotesk', sans-serif" fontWeight="600">
-              {s.name.split(" ")[0]}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
 function ScoreBar({ label, value, invert }) {
   const pct = Math.round((invert ? (1 - value) : value) * 100);
   return (
@@ -208,6 +170,12 @@ function StationCard({ s, rank, selected, favorite, onSelect, onFav }) {
             border: `1px solid ${rank === 1 ? "#2DD4A7" : "#243456"}`, borderRadius: 4, padding: "1px 5px"
           }}>#{rank}</span>
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14.5, color: "#EAF0FB" }}>{s.name}</span>
+          {s.real && (
+            <span style={{
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, color: "#4FC3F7",
+              border: "1px solid #1E3A52", background: "#0E1F2E", borderRadius: 4, padding: "1px 5px"
+            }}>real location</span>
+          )}
         </div>
         <button onClick={(e) => { e.stopPropagation(); onFav(s.id); }} style={{
           background: "none", border: "none", cursor: "pointer", padding: 2, color: favorite ? "#F5A623" : "#3C4A6B"
@@ -465,7 +433,25 @@ const authInput = {
 
 export default function GridPulseApp() {
   const [rawStations, setRawStations] = useState(INITIAL_STATIONS);
-  const ranked = useMatchScore(rawStations);
+  const [realStations, setRealStations] = useState([]);
+  const [realStationsStatus, setRealStationsStatus] = useState("loading"); // loading | ok | error
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRealStations(USER_LAT, USER_LNG)
+      .then((stations) => {
+        if (cancelled) return;
+        setRealStations(stations);
+        setRealStationsStatus("ok");
+      })
+      .catch(() => {
+        if (!cancelled) setRealStationsStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const combinedStations = useMemo(() => [...realStations, ...rawStations], [realStations, rawStations]);
+  const ranked = useMatchScore(combinedStations);
   const [selectedId, setSelectedId] = useState(ranked[0]?.id);
   const [battery, setBattery] = useState(28);
   const [vehicle, setVehicle] = useState(VEHICLES[0].id);
@@ -627,7 +613,18 @@ export default function GridPulseApp() {
           {/* Center: map + list */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12 }}>
-              <CircuitMap stations={ranked} selectedId={selectedId} onSelect={setSelectedId} />
+              <RealMap
+                stations={ranked}
+                userCoords={{ lat: USER_LAT, lng: USER_LNG }}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                dark={dark}
+              />
+              <div style={{ marginTop: 8, fontSize: 10.5, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>
+                {realStationsStatus === "loading" && "Loading real charging stations…"}
+                {realStationsStatus === "ok" && `${realStations.length} real stations via OpenStreetMap + Open Charge Map · pricing/availability/renewable % estimated`}
+                {realStationsStatus === "error" && "Couldn't reach Open Charge Map — showing saved stations only"}
+              </div>
             </div>
             <div>
               {list.length === 0 ? (
@@ -697,7 +694,7 @@ export default function GridPulseApp() {
                     disabled={selected.availablePorts === 0}
                     onClick={async () => {
                       setBookingStatus("Booking...");
-                      if (token) {
+                      if (token && !selected.real) {
                         try {
                           await api.createBooking(token, selected.id);
                           setRawStations(prev => prev.map(s => s.id === selected.id ? { ...s, availablePorts: s.availablePorts - 1 } : s));
@@ -708,8 +705,14 @@ export default function GridPulseApp() {
                           return;
                         }
                       }
-                      setRawStations(prev => prev.map(s => s.id === selected.id ? { ...s, availablePorts: Math.max(0, s.availablePorts - 1) } : s));
-                      setBookingStatus("Slot booked locally (demo mode).");
+                      const decrement = (list) => list.map(s => s.id === selected.id ? { ...s, availablePorts: Math.max(0, s.availablePorts - 1) } : s);
+                      if (selected.real) {
+                        setRealStations(decrement);
+                        setBookingStatus("Slot booked locally (real station — no live reservation network).");
+                      } else {
+                        setRawStations(decrement);
+                        setBookingStatus("Slot booked locally (demo mode).");
+                      }
                     }}
                     style={{
                       width: "100%", marginTop: 12, background: selected.availablePorts === 0 ? "#16223A" : "#0E2A24",
