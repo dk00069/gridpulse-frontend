@@ -438,7 +438,9 @@ export default function GridPulseApp() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchRealStations(USER_LAT, USER_LNG)
+    const ocmKey = (typeof import.meta !== "undefined" && import.meta.env?.VITE_OCM_API_KEY) || "";
+    console.log("[GridPulse debug] VITE_OCM_API_KEY present:", Boolean(ocmKey), "length:", ocmKey.length);
+    fetchRealStations(USER_LAT, USER_LNG, 25, ocmKey)
       .then((stations) => {
         if (cancelled) return;
         setRealStations(stations);

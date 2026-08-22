@@ -34,13 +34,14 @@ export function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export async function fetchRealStations(lat, lng, radiusKm = 25) {
+export async function fetchRealStations(lat, lng, radiusKm = 25, apiKey = "") {
+  const keyParam = apiKey ? `&key=${encodeURIComponent(apiKey)}` : "";
   const url =
     `https://api.openchargemap.io/v3/poi/?output=json&latitude=${lat}&longitude=${lng}` +
-    `&distance=${radiusKm}&distanceunit=KM&maxresults=30&compact=true&verbose=false`;
+    `&distance=${radiusKm}&distanceunit=KM&maxresults=30&compact=true&verbose=false${keyParam}`;
 
   const res = await fetch(url);
-  if (!res.ok) throw new Error("Open Charge Map request failed");
+  if (!res.ok) throw new Error(`Open Charge Map request failed (${res.status})`);
   const data = await res.json();
 
   return data
