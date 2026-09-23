@@ -84,12 +84,12 @@ const RENEWABLE_TREND = [
 ];
 
 const INITIAL_STATIONS = [
-  { id: "S1", name: "Kurnool Rd Solar Hub", x: 62, y: 30, distanceKm: 2.1, totalPorts: 6, availablePorts: 4, waitingTimeMin: 5, pricePerKWh: 11.5, renewablePct: 82, chargerType: "Fast (DC)", restaurants: ["Sri Annapurna Mess", "Cafe Coffee Day"] },
-  { id: "S2", name: "Ongole Bypass Grid Point", x: 38, y: 58, distanceKm: 3.4, totalPorts: 4, availablePorts: 0, waitingTimeMin: 35, pricePerKWh: 9.2, renewablePct: 28, chargerType: "Fast (DC)", restaurants: ["Highway King Dhaba"] },
-  { id: "S3", name: "Prakasam Wind Node", x: 78, y: 62, distanceKm: 5.6, totalPorts: 8, availablePorts: 5, waitingTimeMin: 8, pricePerKWh: 10.0, renewablePct: 91, chargerType: "Fast (DC)", restaurants: ["Green Leaf Restaurant", "Tea Junction"] },
-  { id: "S4", name: "Market St Slow Charge", x: 22, y: 22, distanceKm: 1.4, totalPorts: 10, availablePorts: 6, waitingTimeMin: 3, pricePerKWh: 7.8, renewablePct: 45, chargerType: "Slow (AC)", restaurants: ["Udupi Grand"] },
-  { id: "S5", name: "Ring Rd Hybrid Station", x: 55, y: 78, distanceKm: 6.9, totalPorts: 6, availablePorts: 1, waitingTimeMin: 22, pricePerKWh: 10.7, renewablePct: 64, chargerType: "Fast (DC)", restaurants: ["Spice Route", "Bakers Corner"] },
-  { id: "S6", name: "Old Town Grid Charge", x: 15, y: 68, distanceKm: 4.8, totalPorts: 4, availablePorts: 2, waitingTimeMin: 14, pricePerKWh: 8.9, renewablePct: 36, chargerType: "Slow (AC)", restaurants: ["Bismillah Biryani"] },
+  { id: "S1", name: "Kurnool Rd Solar Hub", latitude: 15.515, longitude: 80.062, x: 62, y: 30, distanceKm: 2.1, totalPorts: 6, availablePorts: 4, waitingTimeMin: 5, pricePerKWh: 11.5, renewablePct: 82, chargerType: "Fast (DC)", restaurants: ["Sri Annapurna Mess", "Cafe Coffee Day"] },
+  { id: "S2", name: "Ongole Bypass Grid Point", latitude: 15.498, longitude: 80.045, x: 38, y: 58, distanceKm: 3.4, totalPorts: 4, availablePorts: 0, waitingTimeMin: 35, pricePerKWh: 9.2, renewablePct: 28, chargerType: "Fast (DC)", restaurants: ["Highway King Dhaba"] },
+  { id: "S3", name: "Prakasam Wind Node", latitude: 15.525, longitude: 80.075, x: 78, y: 62, distanceKm: 5.6, totalPorts: 8, availablePorts: 5, waitingTimeMin: 8, pricePerKWh: 10.0, renewablePct: 91, chargerType: "Fast (DC)", restaurants: ["Green Leaf Restaurant", "Tea Junction"] },
+  { id: "S4", name: "Market St Slow Charge", latitude: 15.508, longitude: 80.052, x: 22, y: 22, distanceKm: 1.4, totalPorts: 10, availablePorts: 6, waitingTimeMin: 3, pricePerKWh: 7.8, renewablePct: 45, chargerType: "Slow (AC)", restaurants: ["Udupi Grand"] },
+  { id: "S5", name: "Ring Rd Hybrid Station", latitude: 15.485, longitude: 80.065, x: 55, y: 78, distanceKm: 6.9, totalPorts: 6, availablePorts: 1, waitingTimeMin: 22, pricePerKWh: 10.7, renewablePct: 64, chargerType: "Fast (DC)", restaurants: ["Spice Route", "Bakers Corner"] },
+  { id: "S6", name: "Old Town Grid Charge", latitude: 15.492, longitude: 80.038, x: 15, y: 68, distanceKm: 4.8, totalPorts: 4, availablePorts: 2, waitingTimeMin: 14, pricePerKWh: 8.9, renewablePct: 36, chargerType: "Slow (AC)", restaurants: ["Bismillah Biryani"] },
 ];
 
 const VEHICLES = [
