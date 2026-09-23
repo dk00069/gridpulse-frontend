@@ -36,7 +36,7 @@ const USER_ICON = L.divIcon({
   iconAnchor: [16, 42],
   popupAnchor: [0, -38],
 });
-});
+
 
 export default function RealMap({ stations, userCoords, selectedId, onSelect, dark }) {
   const containerRef = useRef(null);
