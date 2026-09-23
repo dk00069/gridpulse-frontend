@@ -25,9 +25,17 @@ function makeStationIcon(color, selected) {
 
 const USER_ICON = L.divIcon({
   className: "",
-  html: `<div style="width:16px;height:16px;border-radius:50%;background:#4FC3F7;border:3px solid white;box-shadow:0 0 0 4px #4FC3F755;"></div>`,
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
+  html: `<div style="position:relative;width:32px;height:42px;">
+    <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 0C7.2 0 0 7.2 0 16c0 12 16 26 16 26s16-14 16-26C32 7.2 24.8 0 16 0z"
+        fill="#4FC3F7" stroke="white" stroke-width="2"/>
+      <circle cx="16" cy="16" r="6" fill="white"/>
+    </svg>
+  </div>`,
+  iconSize: [32, 42],
+  iconAnchor: [16, 42],
+  popupAnchor: [0, -38],
+});
 });
 
 export default function RealMap({ stations, userCoords, selectedId, onSelect, dark }) {
