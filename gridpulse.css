@@ -1,0 +1,31 @@
+/* GridPulse extra styles. Import once in App.jsx: import "./gridpulse.css"; */
+html { scroll-behavior: smooth; }
+body { margin: 0; background: #0A0F1A; }
+
+.gp-pulse { animation: gp-pulse 2s ease-in-out infinite; }
+@keyframes gp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.gp-bar { transition: height .9s cubic-bezier(.2,.8,.2,1), background-color .6s; }
+.gp-lift { transition: transform .15s, box-shadow .15s; }
+.gp-lift:hover { transform: translateY(-1px); }
+
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid #4FC3F7; outline-offset: 2px;
+}
+
+.gp-hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
+.gp-three { display: grid; grid-template-columns: repeat(3, 1fr); }
+.gp-three > div + div { border-left: 1px solid #1E2C47; }
+.gp-stats { display: grid; grid-template-columns: repeat(4, 1fr); }
+.gp-stats > div + div { border-left: 1px solid #1E2C47; }
+.gp-bal { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+
+@media (max-width: 980px) {
+  .gp-grid { grid-template-columns: 1fr !important; }
+  .gp-hero, .gp-bal { grid-template-columns: 1fr; }
+  .gp-three, .gp-stats { grid-template-columns: 1fr 1fr; }
+  .gp-three > div + div, .gp-stats > div + div { border-left: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
