@@ -7,7 +7,9 @@ import {
   Settings, Sun, CloudSun, Plug, Trash2, Plus, X, ChevronRight,
   Gauge, Utensils, Moon, SunMedium, LogOut, Mail, Lock, User, UserPlus
 } from "lucide-react";
-
+import "./gridpulse.css";
+import Landing from "./Landing.jsx";
+import LoadBalancer, { StatsRow } from "./LoadBalancer.jsx";
 const FONT_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 `;
@@ -465,6 +467,7 @@ export default function GridPulseApp() {
   const [token, setToken] = useState(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [bookingStatus, setBookingStatus] = useState("");
+  const [showLanding, setShowLanding] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -486,7 +489,7 @@ export default function GridPulseApp() {
   const batteryOnArrival = selected ? Math.max(2, Math.round(battery - selected.distanceKm * 1.1)) : battery;
 
   const list = (favOnly ? ranked.filter(s => favorites.has(s.id)) : ranked);
-
+  if (!currentUser && showLanding) return <Landing onStart={() => setShowLanding(false)} />;
   if (!currentUser) {
     return <LoginPanel onAuth={(u) => { setCurrentUser(u); setToken(u.token || null); if (u.vehicle) setVehicle(u.vehicle); }} />;
   }
