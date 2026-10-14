@@ -1,15 +1,18 @@
 import React, { useState, useMemo, useEffect } from "react";
 import RealMap from "./RealMap.jsx";
 import { fetchRealStations } from "./openChargeMap.js";
-import { PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer } from "recharts";
 import {
-  Zap, MapPin, Battery, Clock, Leaf, IndianRupee, Route, Star,
-  Settings, Sun, CloudSun, Plug, Trash2, Plus, X, ChevronRight,
-  Gauge, Utensils, Moon, SunMedium, LogOut, Mail, Lock, User, UserPlus
+  Zap, MapPin, Battery, Leaf, IndianRupee, Route, Star,
+  Settings, CloudSun, Plug, Trash2, Plus, ChevronRight,
+  Gauge, Utensils, Moon, SunMedium, LogOut, Mail, Lock, User, UserPlus, Activity
 } from "lucide-react";
 import "./gridpulse.css";
 import Landing from "./Landing.jsx";
 import LoadBalancer, { StatsRow } from "./LoadBalancer.jsx";
+import RoutePanel from "./RoutePanel.jsx";
+import { rankRoutes, haversineKm } from "./routing.js";
+
 const FONT_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 `;
@@ -66,6 +69,8 @@ function normalizeStations(docs) {
   return docs.map((d) => ({
     id: d._id,
     name: d.stationName,
+    latitude: d.latitude,
+    longitude: d.longitude,
     x: 15 + ((d.longitude - minLng) / spanLng) * 70,
     y: 15 + ((maxLat - d.latitude) / spanLat) * 70,
     distanceKm: d.distanceKm ?? 0,
@@ -162,8 +167,9 @@ function StationCard({ s, rank, selected, favorite, onSelect, onFav }) {
     <div onClick={() => onSelect(s.id)} style={{
       background: selected ? "#16223A" : "#111A2B",
       border: `1px solid ${selected ? "#4FC3F7" : "#1E2C47"}`,
+      boxShadow: selected ? "0 0 0 1px #4FC3F7, 0 8px 28px rgba(79,195,247,.16)" : "none",
       borderRadius: 10, padding: "12px 14px", cursor: "pointer", marginBottom: 8,
-      transition: "border-color 120ms"
+      transition: "border-color 120ms, box-shadow 120ms"
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -227,7 +233,8 @@ function AdminPanel({ stations, setStations, token }) {
       try {
         const { station } = await api.createStation(token, draft);
         setStations(prev => [...prev, {
-          id: station._id, name: station.stationName, x: 50, y: 50, distanceKm: 0,
+          id: station._id, name: station.stationName, latitude: station.latitude, longitude: station.longitude,
+          x: 50, y: 50, distanceKm: 0,
           totalPorts: station.totalPorts, availablePorts: station.availablePorts, waitingTimeMin: station.waitingTime,
           pricePerKWh: station.pricePerKWh, renewablePct: station.renewablePercentage, chargerType: station.chargerType, restaurants: [],
         }]);
@@ -236,7 +243,8 @@ function AdminPanel({ stations, setStations, token }) {
     }
     const nid = "S" + (stations.length + 1) + Math.floor(Math.random() * 100);
     setStations(prev => [...prev, {
-      id: nid, name: "New Station", x: 50 + Math.random() * 20 - 10, y: 50 + Math.random() * 20 - 10,
+      id: nid, name: "New Station", latitude: draft.latitude, longitude: draft.longitude,
+      x: 50 + Math.random() * 20 - 10, y: 50 + Math.random() * 20 - 10,
       distanceKm: 3.0, totalPorts: 4, availablePorts: 4, waitingTimeMin: 5, pricePerKWh: 10, renewablePct: 50,
       chargerType: "Fast (DC)", restaurants: []
     }]);
@@ -407,6 +415,14 @@ function LoginPanel({ onAuth }) {
           </button>
         </form>
 
+        <button type="button" onClick={() => onAuth({ name: "Demo guest", email: "guest@gridpulse.app", vehicle, token: null })}
+          style={{
+            width: "100%", marginTop: 10, background: "transparent", color: "#9FB0D0", border: "1px solid #243456",
+            borderRadius: 8, padding: "9px 0", fontSize: 13, cursor: "pointer"
+          }}>
+          Continue as guest
+        </button>
+
         <div style={{ fontSize: 10.5, color: "#4A5A80", fontFamily: "'JetBrains Mono', monospace", marginTop: 14, textAlign: "center" }}>
           {demoNotice
             ? "Backend unreachable — continuing in local demo mode."
@@ -437,11 +453,14 @@ export default function GridPulseApp() {
   const [rawStations, setRawStations] = useState(INITIAL_STATIONS);
   const [realStations, setRealStations] = useState([]);
   const [realStationsStatus, setRealStationsStatus] = useState("loading"); // loading | ok | error
+  const [userLoc, setUserLoc] = useState(null);
+  const [routes, setRoutes] = useState([]);
+  const [routeStatus, setRouteStatus] = useState("");
+  const [pickMode, setPickMode] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const ocmKey = (typeof import.meta !== "undefined" && import.meta.env?.VITE_OCM_API_KEY) || "";
-    console.log("[GridPulse debug] VITE_OCM_API_KEY present:", Boolean(ocmKey), "length:", ocmKey.length);
     fetchRealStations(USER_LAT, USER_LNG, 25, ocmKey)
       .then((stations) => {
         if (cancelled) return;
@@ -454,7 +473,16 @@ export default function GridPulseApp() {
     return () => { cancelled = true; };
   }, []);
 
-  const combinedStations = useMemo(() => [...realStations, ...rawStations], [realStations, rawStations]);
+  // When the user's location is known, recompute each station's distance from it.
+  const combinedStations = useMemo(() => {
+    const all = [...realStations, ...rawStations];
+    if (!userLoc) return all;
+    return all.map((s) =>
+      s.latitude != null && s.longitude != null
+        ? { ...s, distanceKm: +haversineKm(userLoc, { lat: s.latitude, lng: s.longitude }).toFixed(1) }
+        : s
+    );
+  }, [realStations, rawStations, userLoc]);
   const ranked = useMatchScore(combinedStations);
   const [selectedId, setSelectedId] = useState(ranked[0]?.id);
   const [battery, setBattery] = useState(28);
@@ -488,6 +516,33 @@ export default function GridPulseApp() {
   const etaMin = selected ? Math.round(selected.distanceKm * 2.6 + 4) : 0;
   const batteryOnArrival = selected ? Math.max(2, Math.round(battery - selected.distanceKm * 1.1)) : battery;
 
+  const origin = useMemo(() => userLoc || { lat: USER_LAT, lng: USER_LNG }, [userLoc]);
+
+  const findRoutes = async (loc) => {
+    setRouteStatus("Finding routes...");
+    const r = await rankRoutes(loc, ranked, 5);
+    setRoutes(r);
+    setRouteStatus(
+      r.length === 0 ? "No stations with coordinates found."
+        : r.some((x) => x.fallback) ? "Routing service unreachable: showing approximate routes." : ""
+    );
+    if (r[0]) setSelectedId(r[0].stationId);
+  };
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) { setRouteStatus("Location is not supported in this browser."); return; }
+    setRouteStatus("Waiting for location permission...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserLoc(loc);
+        findRoutes(loc);
+      },
+      () => setRouteStatus("Location is blocked. Use Set demo location instead."),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   const list = (favOnly ? ranked.filter(s => favorites.has(s.id)) : ranked);
   if (!currentUser && showLanding) return <Landing onStart={() => setShowLanding(false)} />;
   if (!currentUser) {
@@ -501,6 +556,9 @@ export default function GridPulseApp() {
   return (
     <div style={{
       fontFamily: "'Inter', sans-serif", background: theme.bg, color: theme.ink,
+      backgroundImage: dark
+        ? "radial-gradient(900px 420px at 85% -10%, rgba(45,212,167,.14), transparent), radial-gradient(700px 420px at -5% 15%, rgba(79,195,247,.10), transparent)"
+        : "none",
       minHeight: "100vh", padding: "20px 24px 48px", transition: "background 150ms"
     }}>
       <style>{FONT_CSS}</style>
@@ -514,7 +572,7 @@ export default function GridPulseApp() {
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, letterSpacing: 0.3, color: theme.ink }}>GRIDPULSE</div>
             <div style={{ fontSize: 11, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>renewable-aware EV charge routing</div>
           </div>
-          <span style={{
+          <span className="gp-pulse" style={{
             marginLeft: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, padding: "3px 8px", borderRadius: 5,
             background: apiOnline ? "#0E2A24" : "#2B2210", color: apiOnline ? "#2DD4A7" : "#F5A623",
             border: `1px solid ${apiOnline ? "#1C4A3E" : "#4A3A18"}`
@@ -560,20 +618,28 @@ export default function GridPulseApp() {
             {dark ? <SunMedium size={15} /> : <Moon size={15} />}
           </button>
 
-          <button onClick={() => setView(v => v === "locator" ? "admin" : "locator")} style={{
-            display: "flex", alignItems: "center", gap: 6, background: view === "admin" ? "#16223A" : theme.panel,
-            border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 12px", cursor: "pointer",
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: theme.ink
-          }}><Settings size={14} /> {view === "locator" ? "Admin" : "Back to locator"}</button>
+          {[["locator", "Locator", MapPin], ["balancer", "Load balancer", Activity], ["admin", "Admin", Settings]].map(([id, label, Icon]) => (
+            <button key={id} onClick={() => setView(id)} style={{
+              display: "flex", alignItems: "center", gap: 6, borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12.5,
+              background: view === id ? "#16223A" : theme.panel, color: view === id ? "#4FC3F7" : theme.ink,
+              border: `1px solid ${view === id ? "#4FC3F7" : theme.border}`
+            }}>
+              <Icon size={14} /> {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {view === "admin" ? (
+      {view === "locator" && <StatsRow stations={ranked} theme={theme} />}
+
+      {view === "balancer" ? (
+        <LoadBalancer stations={ranked} theme={theme} />
+      ) : view === "admin" ? (
         <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 18 }}>
           <AdminPanel stations={rawStations} setStations={setRawStations} token={token} />
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "230px 1fr 340px", gap: 16 }}>
+        <div className="gp-grid" style={{ display: "grid", gridTemplateColumns: "230px 1fr 340px", gap: 16 }}>
           {/* Left: inputs */}
           <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16, height: "fit-content" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
@@ -620,10 +686,13 @@ export default function GridPulseApp() {
             <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12 }}>
               <RealMap
                 stations={ranked}
-                userCoords={{ lat: USER_LAT, lng: USER_LNG }}
+                userCoords={origin}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 dark={dark}
+                routes={routes}
+                pickMode={pickMode}
+                onPickLocation={(loc) => { setPickMode(false); setUserLoc(loc); findRoutes(loc); }}
               />
               <div style={{ marginTop: 8, fontSize: 10.5, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>
                 {realStationsStatus === "loading" && "Loading real charging stations…"}
@@ -650,8 +719,13 @@ export default function GridPulseApp() {
             </div>
           </div>
 
-          {/* Right: station detail */}
+          {/* Right: routes + station detail */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <RoutePanel
+              routes={routes} selectedId={selectedId} onSelect={setSelectedId} theme={theme}
+              status={routeStatus} pickMode={pickMode}
+              onUseLocation={useMyLocation} onTogglePick={() => setPickMode((p) => !p)}
+            />
             {selected && (
               <>
                 <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16 }}>
