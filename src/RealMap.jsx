@@ -61,18 +61,15 @@ export default function RealMap({
     if (map) map.getContainer().style.cursor = pickMode ? "crosshair" : "";
   }, [pickMode]);
 
-  // Soft CARTO tiles: pastel in light mode, deep violet-grey in dark mode
+  // OpenStreetMap tiles (no API key). Softened for light mode and inverted for dark mode via CSS in gridpulse.css
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     if (map._tileLayer) map.removeLayer(map._tileLayer);
-    map._tileLayer = L.tileLayer(
-      `https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`,
-      {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
-      }
-    ).addTo(map);
+    map._tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map);
   }, [dark]);
 
   // User marker (+ recentre when there are no routes yet)
