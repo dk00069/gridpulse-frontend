@@ -44,7 +44,8 @@ export default function RealMap({
   // Init map once
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: true }).setView([userCoords.lat, userCoords.lng], 13);
+    const map = L.map(containerRef.current, { zoomControl: false }).setView([userCoords.lat, userCoords.lng], 13);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
     mapRef.current = map;
     mapRef.current._tileLayer = null;
     routeLayerRef.current = L.layerGroup().addTo(map);
@@ -133,7 +134,8 @@ export default function RealMap({
     if (!map || !routes.length) return;
     const pts = routes.flatMap((r) => r.coords);
     pts.push([userCoords.lat, userCoords.lng]);
-    map.fitBounds(L.latLngBounds(pts), { padding: [30, 30] });
+    const wide = window.innerWidth > 820;
+    map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [wide ? 430 : 30, 70], paddingBottomRight: [wide ? 40 : 30, 40] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes]);
 
@@ -144,5 +146,5 @@ export default function RealMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  return <div ref={containerRef} style={{ width: "100%", height: 400, borderRadius: 14, overflow: "hidden" }} />;
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }

@@ -51,14 +51,18 @@ function approxRoute(from, to) {
 
 // Routes from `origin` to the nearest few stations, ranked by real driving time.
 // Fastest = green, slowest = red, others amber.
-export async function rankRoutes(origin, stations, limit = 5) {
+export async function rankRoutes(origin, stations, limit = 5, includeId) {
   const withCoords = stations.filter((s) => s.latitude != null && s.longitude != null);
   const open = withCoords.filter((s) => s.availablePorts > 0);
   const pool = open.length >= 2 ? open : withCoords;
-  const near = pool
+  let near = pool
     .map((s) => ({ s, d: haversineKm(origin, { lat: s.latitude, lng: s.longitude }) }))
     .sort((a, b) => a.d - b.d)
     .slice(0, limit);
+  if (includeId && !near.some((n) => n.s.id === includeId)) {
+    const extra = withCoords.find((s) => s.id === includeId);
+    if (extra) near = [...near.slice(0, limit - 1), { s: extra, d: 0 }];
+  }
 
   const results = await Promise.all(
     near.map(async ({ s }) => {

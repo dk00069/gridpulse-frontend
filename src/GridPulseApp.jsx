@@ -4,7 +4,7 @@ import { fetchRealStations } from "./openChargeMap.js";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import {
   Zap, MapPin, Battery, Leaf, Route, Star, Settings, CloudSun, Plug, Trash2, Plus,
-  Moon, SunMedium, LogOut, Mail, Lock, User, UserPlus, Activity, Search, Utensils
+  Moon, SunMedium, LogOut, Mail, Lock, User, UserPlus, Activity, Search, Utensils, LocateFixed, X, Crosshair, ArrowRight
 } from "lucide-react";
 import "./gridpulse.css";
 import Landing from "./Landing.jsx";
@@ -137,28 +137,33 @@ function Field({ icon, label, children }) {
   );
 }
 
-function StationCard({ s, selected, best, favorite, onSelect, onFav }) {
+function StationCard({ s, selected, best, favorite, onSelect, onFav, onDirections }) {
   const full = s.availablePorts === 0;
   return (
-    <div className={`card station ${selected ? "sel" : ""}`} onClick={() => onSelect(s.id)}>
-      <Ring value={s.matchScore} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="st-title">
-          <span className="st-name">{s.name}</span>
-          {best && <Chip tone="good">Best match</Chip>}
-          {s.real && <Chip>real location</Chip>}
+    <div className={`card scard ${selected ? "sel" : ""}`} onClick={() => onSelect(s.id)}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="sc-name">{s.name}</div>
+          <div className="muted sc-sub">{s.chargerType} · {s.distanceKm} km away</div>
         </div>
-        <div className="chips">
-          <Chip tone={full ? "bad" : "good"}>{full ? "Full" : `${s.availablePorts}/${s.totalPorts} ports`}</Chip>
-          <Chip tone={s.waitingTimeMin > 20 ? "bad" : s.waitingTimeMin > 10 ? "warn" : "good"}>{s.waitingTimeMin} min wait</Chip>
-          <Chip tone={toneOf(s.renewablePct)}>{s.renewablePct}% renewable</Chip>
-          <Chip>₹{s.pricePerKWh}/kWh</Chip>
-          <Chip>{s.distanceKm} km</Chip>
+        <div className="score-pill" title="Match score"><Star size={13} fill="currentColor" /> {s.matchScore}% match</div>
+      </div>
+      <div className="chips">
+        <Chip tone={toneOf(s.renewablePct)}>{s.renewablePct}% renewable</Chip>
+        <Chip tone={s.waitingTimeMin > 20 ? "bad" : s.waitingTimeMin > 10 ? "warn" : "good"}>{s.waitingTimeMin} min wait</Chip>
+        <Chip>₹{s.pricePerKWh}/kWh</Chip>
+        {best && <Chip tone="good">Best match</Chip>}
+        {s.real && <Chip>real location</Chip>}
+      </div>
+      <div className="row" style={{ justifyContent: "space-between", marginTop: 14 }}>
+        <span className={`status ${full ? "bad" : "good"}`}>● {full ? "Unavailable" : `Open now · ${s.availablePorts}/${s.totalPorts} ports`}</span>
+        <div className="row" style={{ gap: 4 }}>
+          <button className={`star ${favorite ? "on" : ""}`} aria-label="favorite" onClick={(e) => { e.stopPropagation(); onFav(s.id); }}>
+            <Star size={18} fill={favorite ? "currentColor" : "none"} />
+          </button>
+          <button className="btn btn-primary" onClick={(e) => { e.stopPropagation(); onDirections(s.id); }}>Directions <ArrowRight size={14} /></button>
         </div>
       </div>
-      <button className={`star ${favorite ? "on" : ""}`} aria-label="favorite" onClick={(e) => { e.stopPropagation(); onFav(s.id); }}>
-        <Star size={18} fill={favorite ? "currentColor" : "none"} />
-      </button>
     </div>
   );
 }
@@ -335,6 +340,7 @@ export default function GridPulseApp() {
   const [routeStatus, setRouteStatus] = useState("");
   const [pickMode, setPickMode] = useState(false);
   const [toast, setToast] = useState("");
+  const [drawer, setDrawer] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -417,16 +423,21 @@ export default function GridPulseApp() {
     return [...out].sort(by[sortBy]);
   }, [ranked, favOnly, favorites, onlyOpen, typeFilter, sortBy, query]);
 
-  const findRoutes = async (loc) => {
+  const findRoutes = async (loc, includeId) => {
     setRouteStatus("Finding routes...");
-    const r = await rankRoutes(loc, ranked, 5);
+    const r = await rankRoutes(loc, ranked, 5, includeId);
     setRoutes(r);
     setRouteStatus(
       r.length === 0 ? "No stations with coordinates found."
         : r.some((x) => x.fallback) ? "Routing service unreachable: showing approximate routes." : ""
     );
-    if (r[0]) setSelectedId(r[0].stationId);
+    if (includeId) setSelectedId(includeId);
+    else if (r[0]) setSelectedId(r[0].stationId);
+    setDrawer(true);
   };
+
+  const selectStation = (id) => { setSelectedId(id); setDrawer(true); };
+  const directionsTo = (id) => findRoutes(origin, id);
 
   const useMyLocation = () => {
     if (!navigator.geolocation) { setRouteStatus("Location is not supported in this browser."); return; }
@@ -515,144 +526,139 @@ export default function GridPulseApp() {
           </div>
         </div>
 
-        {view === "locator" && <StatsRow stations={ranked} />}
-
         {view === "balancer" ? (
           <LoadBalancer stations={ranked} />
         ) : view === "admin" ? (
           <AdminPanel stations={rawStations} setStations={setRawStations} token={token} />
         ) : (
-          <div className="grid3">
-            {/* Left: trip setup */}
-            <div className="card pad">
-              <div className="row" style={{ marginBottom: 16 }}><MapPin size={16} color="var(--accent)" /><b>Trip setup</b></div>
-              <div className="field">
-                <label className="label">Vehicle</label>
-                <select className="input" value={vehicle} onChange={e => setVehicle(e.target.value)}>
-                  {VEHICLES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label className="label">Battery level</label>
-                <div className="display" style={{ fontSize: 36, lineHeight: 1 }}>{battery}%</div>
-                <input type="range" min="2" max="95" step="1" value={battery} onChange={e => setBattery(+e.target.value)}
-                  style={{ width: "100%", margin: "10px 0", accentColor: "#5B45A0" }} />
-                <Chip tone={battery < 20 ? "bad" : "good"}><Battery size={13} /> {battery < 20 ? "Low, charge soon" : "Battery healthy"}</Chip>
-              </div>
-              <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 6 }}>
-                <div className="label">Match score weights</div>
-                {[["Distance", 40], ["Waiting time", 25], ["Cost", 20], ["Renewable", 15]].map(([k, v]) => (
-                  <div key={k} className="sb" style={{ gridTemplateColumns: "84px 1fr 34px" }}>
-                    <span className="muted">{k}</span>
-                    <div className="track"><div className="fill" style={{ width: `${v * 2.2}%` }} /></div>
-                    <em>{v}%</em>
-                  </div>
-                ))}
-              </div>
+          <div className="stage">
+            <div style={{ position: "absolute", inset: 0 }}>
+              <RealMap
+                stations={ranked}
+                userCoords={origin}
+                selectedId={selectedId}
+                onSelect={selectStation}
+                dark={dark}
+                routes={routes}
+                pickMode={pickMode}
+                onPickLocation={(loc) => { setPickMode(false); setUserLoc(loc); findRoutes(loc); }}
+              />
             </div>
 
-            {/* Center: map + filters + list */}
-            <div>
-              <div className="card mapwrap" style={{ marginBottom: 16 }}>
-                <RealMap
-                  stations={ranked}
-                  userCoords={origin}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  dark={dark}
-                  routes={routes}
-                  pickMode={pickMode}
-                  onPickLocation={(loc) => { setPickMode(false); setUserLoc(loc); findRoutes(loc); }}
-                />
-                <div className="muted" style={{ fontSize: 12, padding: "8px 8px 2px" }}>
-                  {realStationsStatus === "loading" && <div className="skel" style={{ width: 240 }} />}
-                  {realStationsStatus === "ok" && `${realStations.length} real stations via OpenStreetMap + Open Charge Map. Pricing, availability and renewable % are estimated.`}
-                  {realStationsStatus === "error" && "Couldn't reach Open Charge Map. Showing saved stations only."}
+            <div className="float-left">
+              <div className="card search-pill">
+                <Search size={18} />
+                <input placeholder="Search stations" value={query} onChange={e => setQuery(e.target.value)} />
+              </div>
+
+              <div className="card pad-sm">
+                <div className="row" style={{ gap: 8 }}>
+                  <select className="input" value={vehicle} onChange={e => setVehicle(e.target.value)} aria-label="Vehicle">
+                    {VEHICLES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+                <div className="row" style={{ marginTop: 10 }}>
+                  <Battery size={16} color={battery < 20 ? "var(--bad)" : "var(--good)"} />
+                  <input type="range" min="2" max="95" step="1" value={battery} aria-label="Battery level"
+                    onChange={e => setBattery(+e.target.value)} style={{ flex: 1, accentColor: "#5B45A0" }} />
+                  <b style={{ minWidth: 40, textAlign: "right" }}>{battery}%</b>
                 </div>
               </div>
 
-              <div className="toolbar">
-                <div className="search">
-                  <Search size={15} />
-                  <input className="input" placeholder="Search stations" value={query} onChange={e => setQuery(e.target.value)} />
-                </div>
-                <select className="input" style={{ width: "auto" }} value={sortBy} onChange={e => setSortBy(e.target.value)} aria-label="Sort stations">
+              <div className="chips-row">
+                <button className={`chip ${onlyOpen ? "on" : ""}`} onClick={() => setOnlyOpen(v => !v)}>Available now</button>
+                <button className={`chip ${typeFilter === "DC" ? "on" : ""}`} onClick={() => setTypeFilter(t => t === "DC" ? "all" : "DC")}>Fast (DC)</button>
+                <button className={`chip ${typeFilter === "AC" ? "on" : ""}`} onClick={() => setTypeFilter(t => t === "AC" ? "all" : "AC")}>Slow (AC)</button>
+                <button className={`chip ${favOnly ? "on" : ""}`} onClick={() => setFavOnly(v => !v)}><Star size={12} /> Favourites</button>
+                <select value={sortBy} onChange={e => setSortBy(e.target.value)} aria-label="Sort stations">
                   <option value="match">Best match</option>
                   <option value="distance">Nearest</option>
                   <option value="price">Cheapest</option>
                   <option value="green">Greenest</option>
                 </select>
               </div>
-              <div className="chips" style={{ marginTop: 0, marginBottom: 14 }}>
-                <button className={`chip ${onlyOpen ? "on" : ""}`} onClick={() => setOnlyOpen(v => !v)}>Available now</button>
-                <button className={`chip ${typeFilter === "DC" ? "on" : ""}`} onClick={() => setTypeFilter(t => t === "DC" ? "all" : "DC")}>Fast (DC)</button>
-                <button className={`chip ${typeFilter === "AC" ? "on" : ""}`} onClick={() => setTypeFilter(t => t === "AC" ? "all" : "AC")}>Slow (AC)</button>
-                <button className={`chip ${favOnly ? "on" : ""}`} onClick={() => setFavOnly(v => !v)}><Star size={12} /> Favourites</button>
+
+              <div className="list-head">
+                {realStationsStatus === "loading" ? <div className="skel" style={{ width: 160 }} />
+                  : `${list.length} stations · ${list.reduce((a, x) => a + x.availablePorts, 0)} free ports`}
+                {realStationsStatus === "error" && " · Open Charge Map unreachable"}
               </div>
 
-              {list.length === 0 ? (
-                <div className="muted" style={{ textAlign: "center", padding: 30, fontSize: 14 }}>No stations match these filters.</div>
-              ) : list.map((s) => (
-                <StationCard key={s.id} s={s} selected={s.id === selectedId} best={s.id === bestId}
-                  favorite={favorites.has(s.id)} onSelect={setSelectedId}
-                  onFav={(id) => {
-                    setFavorites(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
-                    if (token) api.toggleFavorite(token, id).catch(() => {});
-                  }} />
-              ))}
+              <div className="list-scroll">
+                {list.length === 0 ? (
+                  <div className="card pad muted" style={{ textAlign: "center", fontSize: 14 }}>No stations match these filters.</div>
+                ) : list.map((s) => (
+                  <StationCard key={s.id} s={s} selected={s.id === selectedId} best={s.id === bestId}
+                    favorite={favorites.has(s.id)} onSelect={selectStation} onDirections={directionsTo}
+                    onFav={(id) => {
+                      setFavorites(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+                      if (token) api.toggleFavorite(token, id).catch(() => {});
+                    }} />
+                ))}
+              </div>
             </div>
 
-            {/* Right: routes + station detail */}
-            <div className="stack">
-              <RoutePanel routes={routes} selectedId={selectedId} onSelect={setSelectedId}
-                status={routeStatus} pickMode={pickMode} onUseLocation={useMyLocation} onTogglePick={() => setPickMode(p => !p)} />
-
-              {selected && (
-                <>
-                  <div className="card pad">
-                    <div className="display" style={{ fontSize: 22 }}>{selected.name}</div>
-                    <div className="muted" style={{ fontSize: 13, margin: "4px 0 14px" }}>{selected.chargerType} · {selected.distanceKm} km away</div>
-                    <div className="row" style={{ justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
-                      <span className="row" style={{ gap: 6 }}><Leaf size={14} color="var(--good)" /> Solar / wind <b>{selected.renewablePct}%</b></span>
-                      <span className="muted">Grid {100 - selected.renewablePct}%</span>
-                    </div>
-                    <div className="track" style={{ marginBottom: 16 }}><div className="fill" style={{ width: `${selected.renewablePct}%`, background: "var(--good)" }} /></div>
-                    {[["Distance", selected.breakdown.distance, true], ["Wait time", selected.breakdown.waiting, true],
-                      ["Cost", selected.breakdown.cost, true], ["Renewable", selected.breakdown.renewable, false]].map(([k, v, inv]) => {
-                      const pct = Math.round((inv ? 1 - v : v) * 100);
-                      return (
-                        <div key={k} className="sb">
-                          <span className="muted">{k}</span>
-                          <div className="track"><div className="fill" style={{ width: `${pct}%` }} /></div>
-                          <em>{pct}%</em>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="card pad">
-                    <div className="row" style={{ marginBottom: 12 }}><Route size={16} color="var(--accent)" /><b>Route & cost</b></div>
-                    <div className="tiles">
-                      <div className="tile"><b>{etaMin}</b><span>min ETA</span></div>
-                      <div className="tile"><b>{batteryOnArrival}%</b><span>on arrival</span></div>
-                      <div className="tile"><b>₹{cost.toFixed(0)}</b><span>est. cost</span></div>
-                    </div>
-                    <div className="kv"><span className="muted">Energy needed</span><b>{kWhNeeded.toFixed(1)} kWh</b></div>
-                    <button className="btn btn-primary btn-block" style={{ marginTop: 12, padding: 12 }}
-                      disabled={selected.availablePorts === 0} onClick={book}>
-                      <Plug size={15} /> {selected.availablePorts === 0 ? "No ports available" : "Book this slot"}
-                    </button>
-                  </div>
-
-                  {selected.restaurants?.length > 0 && (
-                    <div className="card pad">
-                      <div className="row" style={{ marginBottom: 4 }}><Utensils size={16} color="var(--warn)" /><b>Nearby while you wait</b></div>
-                      <div className="chips">{selected.restaurants.map(r => <Chip key={r}>{r}</Chip>)}</div>
-                    </div>
-                  )}
-                </>
-              )}
+            <div className="float-top">
+              {pickMode && <div className="card title" style={{ color: "var(--accent)" }}>Click anywhere on the map to set your location</div>}
+              <div className="card title">EV charging stations</div>
+              <button className={`btn ${pickMode ? "btn-soft" : ""}`} style={{ padding: "11px 16px", borderRadius: 14 }} onClick={() => setPickMode(p => !p)}>
+                <Crosshair size={14} /> Demo location
+              </button>
             </div>
+
+            <button className="fab" onClick={useMyLocation} aria-label="Use my location" title="Use my location"><LocateFixed size={22} /></button>
+
+            {drawer && selected && (
+              <div className="float-right">
+                <div className="row" style={{ justifyContent: "flex-end" }}>
+                  <button className="btn btn-icon" onClick={() => setDrawer(false)} aria-label="Close details"><X size={16} /></button>
+                </div>
+                <RoutePanel routes={routes} selectedId={selectedId} onSelect={selectStation} showActions={false}
+                  status={routeStatus} pickMode={pickMode} onUseLocation={useMyLocation} onTogglePick={() => setPickMode(p => !p)} />
+
+                <div className="card pad">
+                  <div className="display" style={{ fontSize: 22 }}>{selected.name}</div>
+                  <div className="muted" style={{ fontSize: 13, margin: "4px 0 14px" }}>{selected.chargerType} · {selected.distanceKm} km away</div>
+                  <div className="row" style={{ justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                    <span className="row" style={{ gap: 6 }}><Leaf size={14} color="var(--good)" /> Solar / wind <b>{selected.renewablePct}%</b></span>
+                    <span className="muted">Grid {100 - selected.renewablePct}%</span>
+                  </div>
+                  <div className="track" style={{ marginBottom: 16 }}><div className="fill" style={{ width: `${selected.renewablePct}%`, background: "var(--good)" }} /></div>
+                  {[["Distance", selected.breakdown.distance, true], ["Wait time", selected.breakdown.waiting, true],
+                    ["Cost", selected.breakdown.cost, true], ["Renewable", selected.breakdown.renewable, false]].map(([k, v, inv]) => {
+                    const pct = Math.round((inv ? 1 - v : v) * 100);
+                    return (
+                      <div key={k} className="sb">
+                        <span className="muted">{k}</span>
+                        <div className="track"><div className="fill" style={{ width: `${pct}%` }} /></div>
+                        <em>{pct}%</em>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="card pad">
+                  <div className="row" style={{ marginBottom: 12 }}><Route size={16} color="var(--accent)" /><b>Route & cost</b></div>
+                  <div className="tiles">
+                    <div className="tile"><b>{etaMin}</b><span>min ETA</span></div>
+                    <div className="tile"><b>{batteryOnArrival}%</b><span>on arrival</span></div>
+                    <div className="tile"><b>₹{cost.toFixed(0)}</b><span>est. cost</span></div>
+                  </div>
+                  <div className="kv"><span className="muted">Energy needed</span><b>{kWhNeeded.toFixed(1)} kWh</b></div>
+                  <button className="btn btn-primary btn-block" style={{ marginTop: 12, padding: 12 }}
+                    disabled={selected.availablePorts === 0} onClick={book}>
+                    <Plug size={15} /> {selected.availablePorts === 0 ? "No ports available" : "Book this slot"}
+                  </button>
+                </div>
+
+                {selected.restaurants?.length > 0 && (
+                  <div className="card pad">
+                    <div className="row" style={{ marginBottom: 4 }}><Utensils size={16} color="var(--warn)" /><b>Nearby while you wait</b></div>
+                    <div className="chips">{selected.restaurants.map(r => <Chip key={r}>{r}</Chip>)}</div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

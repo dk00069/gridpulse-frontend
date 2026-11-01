@@ -1,20 +1,24 @@
 import React from "react";
 import { Navigation, Crosshair, LocateFixed } from "lucide-react";
 
-export default function RoutePanel({ routes, selectedId, onSelect, status, pickMode, onUseLocation, onTogglePick }) {
+export default function RoutePanel({ routes, selectedId, onSelect, status, pickMode, onUseLocation, onTogglePick, showActions = true }) {
   const active = routes.find((r) => r.stationId === selectedId);
   return (
     <div className="card pad">
       <div className="row" style={{ marginBottom: 12 }}>
         <Navigation size={16} color="var(--accent)" />
-        <b>Find the best route</b>
+        <b>Routes</b>
       </div>
-      <div className="row">
-        <button className="btn btn-primary" style={{ flex: 1 }} onClick={onUseLocation}><LocateFixed size={14} /> My location</button>
-        <button className={`btn ${pickMode ? "btn-soft" : ""}`} style={{ flex: 1 }} onClick={onTogglePick}>
-          <Crosshair size={14} /> {pickMode ? "Click the map" : "Demo location"}
-        </button>
-      </div>
+      {showActions ? (
+        <div className="row">
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={onUseLocation}><LocateFixed size={14} /> My location</button>
+          <button className={`btn ${pickMode ? "btn-soft" : ""}`} style={{ flex: 1 }} onClick={onTogglePick}>
+            <Crosshair size={14} /> {pickMode ? "Click the map" : "Demo location"}
+          </button>
+        </div>
+      ) : routes.length === 0 && (
+        <div className="muted" style={{ fontSize: 13 }}>No route yet. Press Directions on a station, or use the locate button on the map.</div>
+      )}
       {status && <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>{status}</div>}
 
       {routes.length > 0 && (
