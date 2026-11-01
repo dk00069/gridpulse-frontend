@@ -1,7 +1,7 @@
 // Road routing via the public OSRM demo server (free, OpenStreetMap data, no API key).
 // Falls back to an approximate straight-line route if the service is unreachable.
 const OSRM = "https://router.project-osrm.org/route/v1/driving";
-const GREEN = "#2DD4A7", AMBER = "#F5A623", RED = "#FF6B6B";
+const GREEN = "#3FB68B", AMBER = "#F0A35E", RED = "#E0645A";
 
 export function haversineKm(a, b) {
   const R = 6371, rad = (d) => (d * Math.PI) / 180;

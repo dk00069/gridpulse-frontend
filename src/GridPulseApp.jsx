@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useEffect } from "react";
 import RealMap from "./RealMap.jsx";
 import { fetchRealStations } from "./openChargeMap.js";
-import { PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import {
-  Zap, MapPin, Battery, Leaf, IndianRupee, Route, Star,
-  Settings, CloudSun, Plug, Trash2, Plus, ChevronRight,
-  Gauge, Utensils, Moon, SunMedium, LogOut, Mail, Lock, User, UserPlus, Activity
+  Zap, MapPin, Battery, Leaf, Route, Star, Settings, CloudSun, Plug, Trash2, Plus,
+  Moon, SunMedium, LogOut, Mail, Lock, User, UserPlus, Activity, Search, Utensils
 } from "lucide-react";
 import "./gridpulse.css";
 import Landing from "./Landing.jsx";
@@ -13,13 +12,8 @@ import LoadBalancer, { StatsRow } from "./LoadBalancer.jsx";
 import RoutePanel from "./RoutePanel.jsx";
 import { rankRoutes, haversineKm } from "./routing.js";
 
-const FONT_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
-`;
-
-// Point this at your running GridPulse backend (see the /gridpulse-backend README).
-// The app falls back to built-in demo data whenever this can't be reached, so it
-// still works standalone if the API isn't running.
+// Point this at your running GridPulse backend. The app falls back to built-in
+// demo data whenever the API can't be reached.
 const API_BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) || "http://localhost:5000/api";
 const USER_LAT = 15.505;
@@ -33,6 +27,10 @@ async function apiCall(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || "Request failed");
   return data;
+}
+
+function authHeader(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 const api = {
@@ -51,12 +49,7 @@ const api = {
     apiCall("/bookings", { method: "POST", headers: authHeader(token), body: JSON.stringify({ stationId }) }),
 };
 
-function authHeader(token) {
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-// Maps a Mongo station doc (real lat/lng, _id) onto the shape the UI already
-// renders (id, x/y schematic position, camelCase fields).
+// Maps a Mongo station doc onto the shape the UI renders.
 function normalizeStations(docs) {
   if (!docs.length) return [];
   const lats = docs.map((d) => d.latitude);
@@ -65,7 +58,6 @@ function normalizeStations(docs) {
   const [minLng, maxLng] = [Math.min(...lngs), Math.max(...lngs)];
   const spanLat = maxLat - minLat || 1;
   const spanLng = maxLng - minLng || 1;
-
   return docs.map((d) => ({
     id: d._id,
     name: d.stationName,
@@ -125,85 +117,48 @@ function useMatchScore(stations) {
   }, [stations]);
 }
 
-function renewColor(pct) {
-  if (pct >= 65) return "#2DD4A7";
-  if (pct >= 40) return "#F5A623";
-  return "#FF6B6B";
+const toneOf = (pct) => (pct >= 65 ? "good" : pct >= 40 ? "warn" : "bad");
+
+function Chip({ tone = "", children }) {
+  return <span className={`chip ${tone}`}>{children}</span>;
 }
 
-function Chip({ children, tone = "default" }) {
-  const tones = {
-    default: { bg: "#16223A", fg: "#9FB0D0", bd: "#243456" },
-    good: { bg: "#0E2A24", fg: "#2DD4A7", bd: "#1C4A3E" },
-    warn: { bg: "#2B2210", fg: "#F5A623", bd: "#4A3A18" },
-    bad: { bg: "#2E1616", fg: "#FF6B6B", bd: "#4A2222" },
-  };
-  const t = tones[tone];
-  return (
-    <span style={{
-      background: t.bg, color: t.fg, border: `1px solid ${t.bd}`,
-      fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500,
-      padding: "3px 8px", borderRadius: 5, letterSpacing: 0.3, whiteSpace: "nowrap"
-    }}>{children}</span>
-  );
+function Ring({ value }) {
+  const c = value >= 70 ? "good" : value >= 45 ? "accent" : "warn";
+  return <div className="ring" style={{ "--p": value, "--c": `var(--${c})` }}><span>{value}</span></div>;
 }
 
-function ScoreBar({ label, value, invert }) {
-  const pct = Math.round((invert ? (1 - value) : value) * 100);
+function Field({ icon, label, children }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#7C8AAE", width: 64 }}>{label}</span>
-      <div style={{ flex: 1, height: 5, background: "#16223A", borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "#4FC3F7", borderRadius: 3 }} />
-      </div>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#EAF0FB", width: 28, textAlign: "right" }}>{pct}%</span>
+    <div className="field">
+      <label className="label">{icon}{label}</label>
+      {children}
     </div>
   );
 }
 
-function StationCard({ s, rank, selected, favorite, onSelect, onFav }) {
-  const busy = s.availablePorts === 0;
+function StationCard({ s, selected, best, favorite, onSelect, onFav }) {
+  const full = s.availablePorts === 0;
   return (
-    <div onClick={() => onSelect(s.id)} style={{
-      background: selected ? "#16223A" : "#111A2B",
-      border: `1px solid ${selected ? "#4FC3F7" : "#1E2C47"}`,
-      boxShadow: selected ? "0 0 0 1px #4FC3F7, 0 8px 28px rgba(79,195,247,.16)" : "none",
-      borderRadius: 10, padding: "12px 14px", cursor: "pointer", marginBottom: 8,
-      transition: "border-color 120ms, box-shadow 120ms"
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: rank === 1 ? "#2DD4A7" : "#7C8AAE",
-            border: `1px solid ${rank === 1 ? "#2DD4A7" : "#243456"}`, borderRadius: 4, padding: "1px 5px"
-          }}>#{rank}</span>
-          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 14.5, color: "#EAF0FB" }}>{s.name}</span>
-          {s.real && (
-            <span style={{
-              fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, color: "#4FC3F7",
-              border: "1px solid #1E3A52", background: "#0E1F2E", borderRadius: 4, padding: "1px 5px"
-            }}>real location</span>
-          )}
+    <div className={`card station ${selected ? "sel" : ""}`} onClick={() => onSelect(s.id)}>
+      <Ring value={s.matchScore} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="st-title">
+          <span className="st-name">{s.name}</span>
+          {best && <Chip tone="good">Best match</Chip>}
+          {s.real && <Chip>real location</Chip>}
         </div>
-        <button onClick={(e) => { e.stopPropagation(); onFav(s.id); }} style={{
-          background: "none", border: "none", cursor: "pointer", padding: 2, color: favorite ? "#F5A623" : "#3C4A6B"
-        }} aria-label="favorite">
-          <Star size={16} fill={favorite ? "#F5A623" : "none"} />
-        </button>
-      </div>
-      <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-        <Chip tone={busy ? "bad" : "good"}>{busy ? "Full" : `${s.availablePorts}/${s.totalPorts} ports`}</Chip>
-        <Chip tone={s.waitingTimeMin > 20 ? "bad" : s.waitingTimeMin > 10 ? "warn" : "good"}>{s.waitingTimeMin} min wait</Chip>
-        <Chip tone={s.renewablePct >= 65 ? "good" : s.renewablePct >= 40 ? "warn" : "bad"}>{s.renewablePct}% renewable</Chip>
-        <Chip>₹{s.pricePerKWh}/kWh</Chip>
-        <Chip>{s.distanceKm} km</Chip>
-      </div>
-      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ flex: 1, height: 6, background: "#16223A", borderRadius: 4, overflow: "hidden" }}>
-          <div style={{ width: `${s.matchScore}%`, height: "100%", background: renewColor(s.renewablePct), borderRadius: 4 }} />
+        <div className="chips">
+          <Chip tone={full ? "bad" : "good"}>{full ? "Full" : `${s.availablePorts}/${s.totalPorts} ports`}</Chip>
+          <Chip tone={s.waitingTimeMin > 20 ? "bad" : s.waitingTimeMin > 10 ? "warn" : "good"}>{s.waitingTimeMin} min wait</Chip>
+          <Chip tone={toneOf(s.renewablePct)}>{s.renewablePct}% renewable</Chip>
+          <Chip>₹{s.pricePerKWh}/kWh</Chip>
+          <Chip>{s.distanceKm} km</Chip>
         </div>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: "#EAF0FB" }}>{s.matchScore} match</span>
       </div>
+      <button className={`star ${favorite ? "on" : ""}`} aria-label="favorite" onClick={(e) => { e.stopPropagation(); onFav(s.id); }}>
+        <Star size={18} fill={favorite ? "currentColor" : "none"} />
+      </button>
     </div>
   );
 }
@@ -213,15 +168,11 @@ function AdminPanel({ stations, setStations, token }) {
     setStations(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
     if (!token) return;
     const fieldMap = { renewablePct: "renewablePercentage", waitingTimeMin: "waitingTime", name: "stationName" };
-    try {
-      await api.updateStation(token, id, { [fieldMap[field] || field]: value });
-    } catch (err) { /* local state already updated; surface nothing disruptive for a single-field edit */ }
+    try { await api.updateStation(token, id, { [fieldMap[field] || field]: value }); } catch (err) { /* local state already updated */ }
   };
   const remove = async (id) => {
     setStations(prev => prev.filter(s => s.id !== id));
-    if (token) {
-      try { await api.deleteStation(token, id); } catch (err) { /* already removed locally */ }
-    }
+    if (token) { try { await api.deleteStation(token, id); } catch (err) { /* already removed locally */ } }
   };
   const add = async () => {
     const draft = {
@@ -234,9 +185,9 @@ function AdminPanel({ stations, setStations, token }) {
         const { station } = await api.createStation(token, draft);
         setStations(prev => [...prev, {
           id: station._id, name: station.stationName, latitude: station.latitude, longitude: station.longitude,
-          x: 50, y: 50, distanceKm: 0,
-          totalPorts: station.totalPorts, availablePorts: station.availablePorts, waitingTimeMin: station.waitingTime,
-          pricePerKWh: station.pricePerKWh, renewablePct: station.renewablePercentage, chargerType: station.chargerType, restaurants: [],
+          x: 50, y: 50, distanceKm: 0, totalPorts: station.totalPorts, availablePorts: station.availablePorts,
+          waitingTimeMin: station.waitingTime, pricePerKWh: station.pricePerKWh, renewablePct: station.renewablePercentage,
+          chargerType: station.chargerType, restaurants: [],
         }]);
         return;
       } catch (err) { /* fall through to local-only add */ }
@@ -244,62 +195,43 @@ function AdminPanel({ stations, setStations, token }) {
     const nid = "S" + (stations.length + 1) + Math.floor(Math.random() * 100);
     setStations(prev => [...prev, {
       id: nid, name: "New Station", latitude: draft.latitude, longitude: draft.longitude,
-      x: 50 + Math.random() * 20 - 10, y: 50 + Math.random() * 20 - 10,
-      distanceKm: 3.0, totalPorts: 4, availablePorts: 4, waitingTimeMin: 5, pricePerKWh: 10, renewablePct: 50,
-      chargerType: "Fast (DC)", restaurants: []
+      x: 50 + Math.random() * 20 - 10, y: 50 + Math.random() * 20 - 10, distanceKm: 3.0, totalPorts: 4,
+      availablePorts: 4, waitingTimeMin: 5, pricePerKWh: 10, renewablePct: 50, chargerType: "Fast (DC)", restaurants: []
     }]);
   };
+  const num = (id, field, v, w, clampFn) => (
+    <input className="input" type="number" value={v} style={{ width: w }}
+      onChange={e => update(id, field, clampFn ? clampFn(+e.target.value) : +e.target.value)} />
+  );
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+    <div className="card pad">
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap" }}>
         <div>
-          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, color: "#EAF0FB" }}>Station registry</span>
-          {!token && <div style={{ fontSize: 11, color: "#F5A623", fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>Demo mode — changes are local only until you log in against the live backend as an admin.</div>}
+          <div className="display" style={{ fontSize: 22 }}>Station registry</div>
+          {!token && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Demo mode: changes are local until you log in against the live backend as an admin.</div>}
         </div>
-        <button onClick={add} style={{
-          display: "flex", alignItems: "center", gap: 6, background: "#0E2A24", color: "#2DD4A7",
-          border: "1px solid #1C4A3E", borderRadius: 7, padding: "6px 12px", fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 12, cursor: "pointer"
-        }}><Plus size={14} /> Add station</button>
+        <button className="btn btn-primary" onClick={add}><Plus size={14} /> Add station</button>
       </div>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+        <table className="tbl">
           <thead>
-            <tr style={{ color: "#7C8AAE", textAlign: "left", borderBottom: "1px solid #1E2C47" }}>
-              <th style={{ padding: "6px 8px" }}>Name</th>
-              <th style={{ padding: "6px 8px" }}>Ports (avail/total)</th>
-              <th style={{ padding: "6px 8px" }}>₹/kWh</th>
-              <th style={{ padding: "6px 8px" }}>Renewable %</th>
-              <th style={{ padding: "6px 8px" }}>Wait (min)</th>
-              <th style={{ padding: "6px 8px" }}></th>
-            </tr>
+            <tr><th>Name</th><th>Ports (free / total)</th><th>₹/kWh</th><th>Renewable %</th><th>Wait (min)</th><th /></tr>
           </thead>
           <tbody>
             {stations.map(s => (
-              <tr key={s.id} style={{ borderBottom: "1px solid #16223A" }}>
-                <td style={{ padding: "6px 8px" }}>
-                  <input value={s.name} onChange={e => update(s.id, "name", e.target.value)}
-                    style={inputStyle} />
+              <tr key={s.id}>
+                <td><input className="input" value={s.name} style={{ minWidth: 170 }} onChange={e => update(s.id, "name", e.target.value)} /></td>
+                <td>
+                  <div className="row" style={{ gap: 6 }}>
+                    {num(s.id, "availablePorts", s.availablePorts, 64, (n) => Math.max(0, Math.min(s.totalPorts, n)))}
+                    <span className="muted">/</span>
+                    {num(s.id, "totalPorts", s.totalPorts, 64)}
+                  </div>
                 </td>
-                <td style={{ padding: "6px 8px" }}>
-                  <input type="number" value={s.availablePorts} onChange={e => update(s.id, "availablePorts", Math.max(0, Math.min(s.totalPorts, +e.target.value)))}
-                    style={{ ...inputStyle, width: 44 }} /> / <input type="number" value={s.totalPorts} onChange={e => update(s.id, "totalPorts", +e.target.value)}
-                    style={{ ...inputStyle, width: 44 }} />
-                </td>
-                <td style={{ padding: "6px 8px" }}>
-                  <input type="number" value={s.pricePerKWh} onChange={e => update(s.id, "pricePerKWh", +e.target.value)} style={{ ...inputStyle, width: 56 }} />
-                </td>
-                <td style={{ padding: "6px 8px" }}>
-                  <input type="number" value={s.renewablePct} onChange={e => update(s.id, "renewablePct", Math.max(0, Math.min(100, +e.target.value)))} style={{ ...inputStyle, width: 52 }} />
-                </td>
-                <td style={{ padding: "6px 8px" }}>
-                  <input type="number" value={s.waitingTimeMin} onChange={e => update(s.id, "waitingTimeMin", +e.target.value)} style={{ ...inputStyle, width: 52 }} />
-                </td>
-                <td style={{ padding: "6px 8px" }}>
-                  <button onClick={() => remove(s.id)} style={{ background: "none", border: "none", color: "#FF6B6B", cursor: "pointer" }} aria-label="delete">
-                    <Trash2 size={15} />
-                  </button>
-                </td>
+                <td>{num(s.id, "pricePerKWh", s.pricePerKWh, 76)}</td>
+                <td>{num(s.id, "renewablePct", s.renewablePct, 76, (n) => Math.max(0, Math.min(100, n)))}</td>
+                <td>{num(s.id, "waitingTimeMin", s.waitingTimeMin, 76)}</td>
+                <td><button className="star" style={{ color: "var(--bad)" }} onClick={() => remove(s.id)} aria-label="delete"><Trash2 size={16} /></button></td>
               </tr>
             ))}
           </tbody>
@@ -308,11 +240,6 @@ function AdminPanel({ stations, setStations, token }) {
     </div>
   );
 }
-
-const inputStyle = {
-  background: "#0A0F1A", border: "1px solid #243456", borderRadius: 5, color: "#EAF0FB",
-  padding: "4px 6px", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, width: 130
-};
 
 function LoginPanel({ onAuth }) {
   const [mode, setMode] = useState("login");
@@ -326,25 +253,17 @@ function LoginPanel({ onAuth }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim() || (mode === "register" && !name.trim())) {
-      setError("Fill in every field to continue.");
-      return;
-    }
-    if (password.length < 4) {
-      setError("Password needs at least 4 characters.");
-      return;
-    }
+    if (!email.trim() || !password.trim() || (mode === "register" && !name.trim())) { setError("Fill in every field to continue."); return; }
+    if (password.length < 4) { setError("Password needs at least 4 characters."); return; }
     setError("");
     setLoading(true);
     try {
-      const payload =
-        mode === "register"
-          ? await api.register({ name: name.trim(), email: email.trim(), password, vehicle })
-          : await api.login({ email: email.trim(), password });
+      const payload = mode === "register"
+        ? await api.register({ name: name.trim(), email: email.trim(), password, vehicle })
+        : await api.login({ email: email.trim(), password });
       onAuth({ ...payload.user, vehicle: payload.user.vehicle || vehicle, token: payload.token });
     } catch (err) {
       if (err.message === "Failed to fetch") {
-        // Backend not running — fall back to a local demo session.
         setDemoNotice(true);
         onAuth({ name: mode === "register" ? name.trim() : email.split("@")[0], email: email.trim(), vehicle, token: null });
       } else {
@@ -356,98 +275,56 @@ function LoginPanel({ onAuth }) {
   };
 
   return (
-    <div style={{
-      minHeight: "100vh", background: "#0A0F1A", display: "flex", alignItems: "center",
-      justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 20
-    }}>
-      <style>{FONT_CSS}</style>
-      <div style={{ width: 380, background: "#111A2B", border: "1px solid #1E2C47", borderRadius: 14, padding: 28 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: "#0E2A24", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #1C4A3E" }}>
-            <Zap size={18} color="#2DD4A7" />
-          </div>
+    <div className="gp-app center" data-theme="light">
+      <div className="card" style={{ width: "100%", maxWidth: 400, padding: 28 }}>
+        <div className="row" style={{ marginBottom: 22 }}>
+          <div className="logo"><Zap size={20} /></div>
           <div>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 18, color: "#EAF0FB" }}>GRIDPULSE</div>
-            <div style={{ fontSize: 11, color: "#7C8AAE", fontFamily: "'JetBrains Mono', monospace" }}>sign in to find your charge</div>
+            <div className="display" style={{ fontSize: 22 }}>GridPulse</div>
+            <div className="muted" style={{ fontSize: 12 }}>Sign in to find your charge</div>
           </div>
         </div>
-
-        <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#0A0F1A", border: "1px solid #1E2C47", borderRadius: 8, padding: 4 }}>
+        <div className="seg" style={{ display: "flex", marginBottom: 20 }}>
           {["login", "register"].map(m => (
-            <button key={m} type="button" onClick={() => { setMode(m); setError(""); }} style={{
-              flex: 1, padding: "7px 0", borderRadius: 6, border: "none", cursor: "pointer",
-              background: mode === m ? "#16223A" : "transparent",
-              color: mode === m ? "#EAF0FB" : "#7C8AAE",
-              fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 500
-            }}>{m === "login" ? "Log in" : "Register"}</button>
+            <button key={m} type="button" className={mode === m ? "on" : ""} style={{ flex: 1, justifyContent: "center" }}
+              onClick={() => { setMode(m); setError(""); }}>{m === "login" ? "Log in" : "Register"}</button>
           ))}
         </div>
-
         <form onSubmit={submit}>
           {mode === "register" && (
-            <Field icon={<User size={14} />} label="Full name">
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Asha Rao" style={authInput} />
+            <Field icon={<User size={13} />} label="Full name">
+              <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Asha Rao" />
             </Field>
           )}
-          <Field icon={<Mail size={14} />} label="Email">
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="asha@example.com" style={authInput} />
+          <Field icon={<Mail size={13} />} label="Email">
+            <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="asha@example.com" />
           </Field>
-          <Field icon={<Lock size={14} />} label="Password">
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" style={authInput} />
+          <Field icon={<Lock size={13} />} label="Password">
+            <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
           </Field>
           {mode === "register" && (
-            <Field icon={<Zap size={14} />} label="Vehicle model">
-              <select value={vehicle} onChange={e => setVehicle(e.target.value)} style={authInput}>
+            <Field icon={<Zap size={13} />} label="Vehicle model">
+              <select className="input" value={vehicle} onChange={e => setVehicle(e.target.value)}>
                 {VEHICLES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </Field>
           )}
-
-          {error && <div style={{ color: "#FF6B6B", fontSize: 12, marginBottom: 12, fontFamily: "'JetBrains Mono', monospace" }}>{error}</div>}
-
-          <button type="submit" disabled={loading} style={{
-            width: "100%", background: "#0E2A24", color: "#2DD4A7", border: "1px solid #1C4A3E",
-            borderRadius: 8, padding: "10px 0", fontFamily: "'JetBrains Mono', monospace", fontSize: 13,
-            fontWeight: 600, cursor: loading ? "default" : "pointer", opacity: loading ? 0.7 : 1,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8
-          }}>
+          {error && <div style={{ color: "var(--bad)", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+          <button className="btn btn-primary btn-block" type="submit" disabled={loading} style={{ padding: 12 }}>
             <UserPlus size={15} /> {loading ? "Connecting..." : mode === "login" ? "Log in" : "Create account"}
           </button>
         </form>
-
-        <button type="button" onClick={() => onAuth({ name: "Demo guest", email: "guest@gridpulse.app", vehicle, token: null })}
-          style={{
-            width: "100%", marginTop: 10, background: "transparent", color: "#9FB0D0", border: "1px solid #243456",
-            borderRadius: 8, padding: "9px 0", fontSize: 13, cursor: "pointer"
-          }}>
+        <button type="button" className="btn btn-block" style={{ marginTop: 10, padding: 12 }}
+          onClick={() => onAuth({ name: "Demo guest", email: "guest@gridpulse.app", vehicle, token: null })}>
           Continue as guest
         </button>
-
-        <div style={{ fontSize: 10.5, color: "#4A5A80", fontFamily: "'JetBrains Mono', monospace", marginTop: 14, textAlign: "center" }}>
-          {demoNotice
-            ? "Backend unreachable — continuing in local demo mode."
-            : `Talks to ${API_BASE_URL}`}
+        <div className="muted" style={{ fontSize: 11, marginTop: 14, textAlign: "center" }}>
+          {demoNotice ? "Backend unreachable. Continuing in local demo mode." : `Talks to ${API_BASE_URL}`}
         </div>
       </div>
     </div>
   );
 }
-
-function Field({ icon, label, children }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 11, color: "#7C8AAE", fontFamily: "'JetBrains Mono', monospace", display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
-        {icon}{label}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-const authInput = {
-  width: "100%", background: "#0A0F1A", border: "1px solid #243456", borderRadius: 7,
-  color: "#EAF0FB", padding: "9px 10px", fontFamily: "'Inter', sans-serif", fontSize: 13
-};
 
 export default function GridPulseApp() {
   const [rawStations, setRawStations] = useState(INITIAL_STATIONS);
@@ -457,23 +334,18 @@ export default function GridPulseApp() {
   const [routes, setRoutes] = useState([]);
   const [routeStatus, setRouteStatus] = useState("");
   const [pickMode, setPickMode] = useState(false);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     const ocmKey = (typeof import.meta !== "undefined" && import.meta.env?.VITE_OCM_API_KEY) || "";
     fetchRealStations(USER_LAT, USER_LNG, 25, ocmKey)
-      .then((stations) => {
-        if (cancelled) return;
-        setRealStations(stations);
-        setRealStationsStatus("ok");
-      })
-      .catch(() => {
-        if (!cancelled) setRealStationsStatus("error");
-      });
+      .then((stations) => { if (!cancelled) { setRealStations(stations); setRealStationsStatus("ok"); } })
+      .catch(() => { if (!cancelled) setRealStationsStatus("error"); });
     return () => { cancelled = true; };
   }, []);
 
-  // When the user's location is known, recompute each station's distance from it.
+  // Once the user's location is known, recompute each station's distance from it.
   const combinedStations = useMemo(() => {
     const all = [...realStations, ...rawStations];
     if (!userLoc) return all;
@@ -484,17 +356,21 @@ export default function GridPulseApp() {
     );
   }, [realStations, rawStations, userLoc]);
   const ranked = useMatchScore(combinedStations);
+
   const [selectedId, setSelectedId] = useState(ranked[0]?.id);
   const [battery, setBattery] = useState(28);
   const [vehicle, setVehicle] = useState(VEHICLES[0].id);
   const [favorites, setFavorites] = useState(new Set());
   const [view, setView] = useState("locator");
   const [favOnly, setFavOnly] = useState(false);
-  const [dark, setDark] = useState(true);
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("match");
+  const [query, setQuery] = useState("");
+  const [dark, setDark] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [token, setToken] = useState(null);
   const [apiOnline, setApiOnline] = useState(false);
-  const [bookingStatus, setBookingStatus] = useState("");
   const [showLanding, setShowLanding] = useState(true);
 
   useEffect(() => {
@@ -509,14 +385,37 @@ export default function GridPulseApp() {
     return () => { cancelled = true; };
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const selected = ranked.find(s => s.id === selectedId) || ranked[0];
   const vehicleObj = VEHICLES.find(v => v.id === vehicle);
   const kWhNeeded = useMemo(() => Math.max(0, (0.85 - battery / 100) * vehicleObj.capacityKWh), [battery, vehicleObj]);
-  const cost = selected ? (kWhNeeded * selected.pricePerKWh) : 0;
+  const cost = selected ? kWhNeeded * selected.pricePerKWh : 0;
   const etaMin = selected ? Math.round(selected.distanceKm * 2.6 + 4) : 0;
   const batteryOnArrival = selected ? Math.max(2, Math.round(battery - selected.distanceKm * 1.1)) : battery;
 
   const origin = useMemo(() => userLoc || { lat: USER_LAT, lng: USER_LNG }, [userLoc]);
+
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const out = ranked.filter(s =>
+      (!favOnly || favorites.has(s.id)) &&
+      (!onlyOpen || s.availablePorts > 0) &&
+      (typeFilter === "all" || (s.chargerType || "").includes(typeFilter)) &&
+      s.name.toLowerCase().includes(q)
+    );
+    const by = {
+      match: (a, b) => b.matchScore - a.matchScore,
+      distance: (a, b) => a.distanceKm - b.distanceKm,
+      price: (a, b) => a.pricePerKWh - b.pricePerKWh,
+      green: (a, b) => b.renewablePct - a.renewablePct,
+    };
+    return [...out].sort(by[sortBy]);
+  }, [ranked, favOnly, favorites, onlyOpen, typeFilter, sortBy, query]);
 
   const findRoutes = async (loc) => {
     setRouteStatus("Finding routes...");
@@ -538,301 +437,226 @@ export default function GridPulseApp() {
         setUserLoc(loc);
         findRoutes(loc);
       },
-      () => setRouteStatus("Location is blocked. Use Set demo location instead."),
+      () => setRouteStatus("Location is blocked. Use Demo location instead."),
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
-  const list = (favOnly ? ranked.filter(s => favorites.has(s.id)) : ranked);
+  const book = async () => {
+    setToast("Booking...");
+    if (token && !selected.real) {
+      try {
+        await api.createBooking(token, selected.id);
+        setRawStations(prev => prev.map(s => s.id === selected.id ? { ...s, availablePorts: s.availablePorts - 1 } : s));
+        setToast("Slot booked and confirmed.");
+      } catch (err) {
+        setToast(err.message);
+      }
+      return;
+    }
+    const dec = (arr) => arr.map(s => s.id === selected.id ? { ...s, availablePorts: Math.max(0, s.availablePorts - 1) } : s);
+    if (selected.real) {
+      setRealStations(dec);
+      setToast("Slot booked locally (real station, no live reservation network).");
+    } else {
+      setRawStations(dec);
+      setToast("Slot booked locally (demo mode).");
+    }
+  };
+
   if (!currentUser && showLanding) return <Landing onStart={() => setShowLanding(false)} />;
   if (!currentUser) {
     return <LoginPanel onAuth={(u) => { setCurrentUser(u); setToken(u.token || null); if (u.vehicle) setVehicle(u.vehicle); }} />;
   }
 
-  const theme = dark
-    ? { bg: "#0A0F1A", panel: "#111A2B", border: "#1E2C47", ink: "#EAF0FB", muted: "#7C8AAE" }
-    : { bg: "#F4F6FB", panel: "#FFFFFF", border: "#DCE3F2", ink: "#101828", muted: "#5B6478" };
+  const bestId = ranked[0]?.id;
 
   return (
-    <div style={{
-      fontFamily: "'Inter', sans-serif", background: theme.bg, color: theme.ink,
-      backgroundImage: dark
-        ? "radial-gradient(900px 420px at 85% -10%, rgba(45,212,167,.14), transparent), radial-gradient(700px 420px at -5% 15%, rgba(79,195,247,.10), transparent)"
-        : "none",
-      minHeight: "100vh", padding: "20px 24px 48px", transition: "background 150ms"
-    }}>
-      <style>{FONT_CSS}</style>
-
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: "#0E2A24", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #1C4A3E" }}>
-            <Zap size={18} color="#2DD4A7" />
-          </div>
-          <div>
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, letterSpacing: 0.3, color: theme.ink }}>GRIDPULSE</div>
-            <div style={{ fontSize: 11, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>renewable-aware EV charge routing</div>
-          </div>
-          <span className="gp-pulse" style={{
-            marginLeft: 6, fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, padding: "3px 8px", borderRadius: 5,
-            background: apiOnline ? "#0E2A24" : "#2B2210", color: apiOnline ? "#2DD4A7" : "#F5A623",
-            border: `1px solid ${apiOnline ? "#1C4A3E" : "#4A3A18"}`
-          }}>{apiOnline ? "● live backend" : "○ demo data"}</span>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "6px 10px" }}>
-            <span style={{ fontSize: 11, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>GRID RENEWABLE %</span>
-            <div style={{ width: 100, height: 28 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={RENEWABLE_TREND}>
-                  <defs>
-                    <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#2DD4A7" stopOpacity={0.5} />
-                      <stop offset="100%" stopColor="#2DD4A7" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <Area type="monotone" dataKey="v" stroke="#2DD4A7" strokeWidth={1.5} fill="url(#rg)" />
-                </AreaChart>
-              </ResponsiveContainer>
+    <div className="gp-app" data-theme={dark ? "dark" : "light"}>
+      <div className="shell">
+        <div className="topbar">
+          <div className="row">
+            <div className="logo"><Zap size={20} /></div>
+            <div>
+              <div className="display" style={{ fontSize: 22, lineHeight: 1.1 }}>GridPulse</div>
+              <div className="muted" style={{ fontSize: 12 }}>Renewable-aware EV charge routing</div>
             </div>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: "#2DD4A7" }}>63%</span>
+            <span className={`chip gp-pulse ${apiOnline ? "good" : "warn"}`}>{apiOnline ? "● live backend" : "○ demo data"}</span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: theme.muted }}>
-            <CloudSun size={15} color="#F5A623" /> Ongole · 31°C
+          <div className="seg">
+            {[["locator", "Locator", MapPin], ["balancer", "Load balancer", Activity], ["admin", "Admin", Settings]].map(([id, label, Icon]) => (
+              <button key={id} className={view === id ? "on" : ""} onClick={() => setView(id)}><Icon size={14} /> {label}</button>
+            ))}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: theme.ink }}>
-            <User size={14} color="#4FC3F7" />
-            <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{currentUser.name}</span>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <div className="card row" style={{ padding: "6px 12px", borderRadius: 14, gap: 8 }}>
+              <span className="muted" style={{ fontSize: 12 }}>Grid renewable</span>
+              <div style={{ width: 70, height: 26 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={RENEWABLE_TREND}>
+                    <defs>
+                      <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3FB68B" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="#3FB68B" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="v" stroke="#3FB68B" strokeWidth={1.8} fill="url(#rg)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <b style={{ color: "var(--good)" }}>63%</b>
+            </div>
+            <span className="chip"><CloudSun size={14} /> Ongole · 31°C</span>
+            <span className="chip"><User size={13} /> {currentUser.name}</span>
+            <button className="btn btn-icon" onClick={() => setDark(d => !d)} aria-label="toggle theme">{dark ? <SunMedium size={16} /> : <Moon size={16} />}</button>
+            <button className="btn btn-icon" onClick={() => setCurrentUser(null)} aria-label="log out"><LogOut size={16} /></button>
           </div>
-          <button onClick={() => setCurrentUser(null)} style={{
-            background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 9px", cursor: "pointer", color: theme.ink
-          }} aria-label="log out">
-            <LogOut size={15} />
-          </button>
-
-          <button onClick={() => setDark(d => !d)} style={{
-            background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 9px", cursor: "pointer", color: theme.ink
-          }} aria-label="toggle theme">
-            {dark ? <SunMedium size={15} /> : <Moon size={15} />}
-          </button>
-
-          {[["locator", "Locator", MapPin], ["balancer", "Load balancer", Activity], ["admin", "Admin", Settings]].map(([id, label, Icon]) => (
-            <button key={id} onClick={() => setView(id)} style={{
-              display: "flex", alignItems: "center", gap: 6, borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12.5,
-              background: view === id ? "#16223A" : theme.panel, color: view === id ? "#4FC3F7" : theme.ink,
-              border: `1px solid ${view === id ? "#4FC3F7" : theme.border}`
-            }}>
-              <Icon size={14} /> {label}
-            </button>
-          ))}
         </div>
-      </div>
 
-      {view === "locator" && <StatsRow stations={ranked} theme={theme} />}
+        {view === "locator" && <StatsRow stations={ranked} />}
 
-      {view === "balancer" ? (
-        <LoadBalancer stations={ranked} theme={theme} />
-      ) : view === "admin" ? (
-        <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 18 }}>
+        {view === "balancer" ? (
+          <LoadBalancer stations={ranked} />
+        ) : view === "admin" ? (
           <AdminPanel stations={rawStations} setStations={setRawStations} token={token} />
-        </div>
-      ) : (
-        <div className="gp-grid" style={{ display: "grid", gridTemplateColumns: "230px 1fr 340px", gap: 16 }}>
-          {/* Left: inputs */}
-          <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16, height: "fit-content" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
-              <MapPin size={14} color="#4FC3F7" />
-              <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13 }}>Trip setup</span>
-            </div>
-
-            <label style={{ fontSize: 11, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>VEHICLE</label>
-            <select value={vehicle} onChange={e => setVehicle(e.target.value)} style={{
-              width: "100%", marginTop: 4, marginBottom: 14, background: theme.bg, color: theme.ink,
-              border: `1px solid ${theme.border}`, borderRadius: 7, padding: "8px 8px", fontSize: 12.5
-            }}>
-              {VEHICLES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
-
-            <label style={{ fontSize: 11, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>BATTERY: {battery}%</label>
-            <input type="range" min="2" max="95" step="1" value={battery} onChange={e => setBattery(+e.target.value)}
-              style={{ width: "100%", marginTop: 6, marginBottom: 14, accentColor: "#2DD4A7" }} />
-
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: theme.muted, marginBottom: 14 }}>
-              <Battery size={14} color={battery < 20 ? "#FF6B6B" : "#2DD4A7"} />
-              {battery < 20 ? "Low battery — charging recommended" : "Battery healthy"}
-            </div>
-
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: theme.ink, cursor: "pointer", marginTop: 4 }}>
-              <input type="checkbox" checked={favOnly} onChange={e => setFavOnly(e.target.checked)} />
-              Favorites only
-            </label>
-
-            <div style={{ marginTop: 18, borderTop: `1px solid ${theme.border}`, paddingTop: 14 }}>
-              <span style={{ fontSize: 11, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>MATCH SCORE WEIGHTS</span>
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-                {[["Distance", 40], ["Waiting time", 25], ["Cost", 20], ["Renewable %", 15]].map(([k, v]) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>
-                    <span>{k}</span><span style={{ color: theme.ink }}>{v}%</span>
+        ) : (
+          <div className="grid3">
+            {/* Left: trip setup */}
+            <div className="card pad">
+              <div className="row" style={{ marginBottom: 16 }}><MapPin size={16} color="var(--accent)" /><b>Trip setup</b></div>
+              <div className="field">
+                <label className="label">Vehicle</label>
+                <select className="input" value={vehicle} onChange={e => setVehicle(e.target.value)}>
+                  {VEHICLES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label className="label">Battery level</label>
+                <div className="display" style={{ fontSize: 36, lineHeight: 1 }}>{battery}%</div>
+                <input type="range" min="2" max="95" step="1" value={battery} onChange={e => setBattery(+e.target.value)}
+                  style={{ width: "100%", margin: "10px 0", accentColor: "#5B45A0" }} />
+                <Chip tone={battery < 20 ? "bad" : "good"}><Battery size={13} /> {battery < 20 ? "Low, charge soon" : "Battery healthy"}</Chip>
+              </div>
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 6 }}>
+                <div className="label">Match score weights</div>
+                {[["Distance", 40], ["Waiting time", 25], ["Cost", 20], ["Renewable", 15]].map(([k, v]) => (
+                  <div key={k} className="sb" style={{ gridTemplateColumns: "84px 1fr 34px" }}>
+                    <span className="muted">{k}</span>
+                    <div className="track"><div className="fill" style={{ width: `${v * 2.2}%` }} /></div>
+                    <em>{v}%</em>
                   </div>
                 ))}
               </div>
             </div>
-          </div>
 
-          {/* Center: map + list */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12 }}>
-              <RealMap
-                stations={ranked}
-                userCoords={origin}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                dark={dark}
-                routes={routes}
-                pickMode={pickMode}
-                onPickLocation={(loc) => { setPickMode(false); setUserLoc(loc); findRoutes(loc); }}
-              />
-              <div style={{ marginTop: 8, fontSize: 10.5, color: theme.muted, fontFamily: "'JetBrains Mono', monospace" }}>
-                {realStationsStatus === "loading" && "Loading real charging stations…"}
-                {realStationsStatus === "ok" && `${realStations.length} real stations via OpenStreetMap + Open Charge Map · pricing/availability/renewable % estimated`}
-                {realStationsStatus === "error" && "Couldn't reach Open Charge Map — showing saved stations only"}
-              </div>
-            </div>
+            {/* Center: map + filters + list */}
             <div>
-              {list.length === 0 ? (
-                <div style={{ color: theme.muted, fontSize: 13, textAlign: "center", padding: 30 }}>No favorites yet — star a station to pin it here.</div>
-              ) : list.map((s, i) => (
-                <StationCard key={s.id} s={s} rank={i + 1} selected={s.id === selectedId}
-                  favorite={favorites.has(s.id)}
+              <div className="card mapwrap" style={{ marginBottom: 16 }}>
+                <RealMap
+                  stations={ranked}
+                  userCoords={origin}
+                  selectedId={selectedId}
                   onSelect={setSelectedId}
+                  dark={dark}
+                  routes={routes}
+                  pickMode={pickMode}
+                  onPickLocation={(loc) => { setPickMode(false); setUserLoc(loc); findRoutes(loc); }}
+                />
+                <div className="muted" style={{ fontSize: 12, padding: "8px 8px 2px" }}>
+                  {realStationsStatus === "loading" && <div className="skel" style={{ width: 240 }} />}
+                  {realStationsStatus === "ok" && `${realStations.length} real stations via OpenStreetMap + Open Charge Map. Pricing, availability and renewable % are estimated.`}
+                  {realStationsStatus === "error" && "Couldn't reach Open Charge Map. Showing saved stations only."}
+                </div>
+              </div>
+
+              <div className="toolbar">
+                <div className="search">
+                  <Search size={15} />
+                  <input className="input" placeholder="Search stations" value={query} onChange={e => setQuery(e.target.value)} />
+                </div>
+                <select className="input" style={{ width: "auto" }} value={sortBy} onChange={e => setSortBy(e.target.value)} aria-label="Sort stations">
+                  <option value="match">Best match</option>
+                  <option value="distance">Nearest</option>
+                  <option value="price">Cheapest</option>
+                  <option value="green">Greenest</option>
+                </select>
+              </div>
+              <div className="chips" style={{ marginTop: 0, marginBottom: 14 }}>
+                <button className={`chip ${onlyOpen ? "on" : ""}`} onClick={() => setOnlyOpen(v => !v)}>Available now</button>
+                <button className={`chip ${typeFilter === "DC" ? "on" : ""}`} onClick={() => setTypeFilter(t => t === "DC" ? "all" : "DC")}>Fast (DC)</button>
+                <button className={`chip ${typeFilter === "AC" ? "on" : ""}`} onClick={() => setTypeFilter(t => t === "AC" ? "all" : "AC")}>Slow (AC)</button>
+                <button className={`chip ${favOnly ? "on" : ""}`} onClick={() => setFavOnly(v => !v)}><Star size={12} /> Favourites</button>
+              </div>
+
+              {list.length === 0 ? (
+                <div className="muted" style={{ textAlign: "center", padding: 30, fontSize: 14 }}>No stations match these filters.</div>
+              ) : list.map((s) => (
+                <StationCard key={s.id} s={s} selected={s.id === selectedId} best={s.id === bestId}
+                  favorite={favorites.has(s.id)} onSelect={setSelectedId}
                   onFav={(id) => {
-                    setFavorites(prev => {
-                      const next = new Set(prev);
-                      next.has(id) ? next.delete(id) : next.add(id);
-                      return next;
-                    });
+                    setFavorites(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
                     if (token) api.toggleFavorite(token, id).catch(() => {});
                   }} />
               ))}
             </div>
+
+            {/* Right: routes + station detail */}
+            <div className="stack">
+              <RoutePanel routes={routes} selectedId={selectedId} onSelect={setSelectedId}
+                status={routeStatus} pickMode={pickMode} onUseLocation={useMyLocation} onTogglePick={() => setPickMode(p => !p)} />
+
+              {selected && (
+                <>
+                  <div className="card pad">
+                    <div className="display" style={{ fontSize: 22 }}>{selected.name}</div>
+                    <div className="muted" style={{ fontSize: 13, margin: "4px 0 14px" }}>{selected.chargerType} · {selected.distanceKm} km away</div>
+                    <div className="row" style={{ justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                      <span className="row" style={{ gap: 6 }}><Leaf size={14} color="var(--good)" /> Solar / wind <b>{selected.renewablePct}%</b></span>
+                      <span className="muted">Grid {100 - selected.renewablePct}%</span>
+                    </div>
+                    <div className="track" style={{ marginBottom: 16 }}><div className="fill" style={{ width: `${selected.renewablePct}%`, background: "var(--good)" }} /></div>
+                    {[["Distance", selected.breakdown.distance, true], ["Wait time", selected.breakdown.waiting, true],
+                      ["Cost", selected.breakdown.cost, true], ["Renewable", selected.breakdown.renewable, false]].map(([k, v, inv]) => {
+                      const pct = Math.round((inv ? 1 - v : v) * 100);
+                      return (
+                        <div key={k} className="sb">
+                          <span className="muted">{k}</span>
+                          <div className="track"><div className="fill" style={{ width: `${pct}%` }} /></div>
+                          <em>{pct}%</em>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="card pad">
+                    <div className="row" style={{ marginBottom: 12 }}><Route size={16} color="var(--accent)" /><b>Route & cost</b></div>
+                    <div className="tiles">
+                      <div className="tile"><b>{etaMin}</b><span>min ETA</span></div>
+                      <div className="tile"><b>{batteryOnArrival}%</b><span>on arrival</span></div>
+                      <div className="tile"><b>₹{cost.toFixed(0)}</b><span>est. cost</span></div>
+                    </div>
+                    <div className="kv"><span className="muted">Energy needed</span><b>{kWhNeeded.toFixed(1)} kWh</b></div>
+                    <button className="btn btn-primary btn-block" style={{ marginTop: 12, padding: 12 }}
+                      disabled={selected.availablePorts === 0} onClick={book}>
+                      <Plug size={15} /> {selected.availablePorts === 0 ? "No ports available" : "Book this slot"}
+                    </button>
+                  </div>
+
+                  {selected.restaurants?.length > 0 && (
+                    <div className="card pad">
+                      <div className="row" style={{ marginBottom: 4 }}><Utensils size={16} color="var(--warn)" /><b>Nearby while you wait</b></div>
+                      <div className="chips">{selected.restaurants.map(r => <Chip key={r}>{r}</Chip>)}</div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-
-          {/* Right: routes + station detail */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <RoutePanel
-              routes={routes} selectedId={selectedId} onSelect={setSelectedId} theme={theme}
-              status={routeStatus} pickMode={pickMode}
-              onUseLocation={useMyLocation} onTogglePick={() => setPickMode((p) => !p)}
-            />
-            {selected && (
-              <>
-                <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16 }}>
-                  <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 2 }}>{selected.name}</div>
-                  <div style={{ fontSize: 11.5, color: theme.muted, fontFamily: "'JetBrains Mono', monospace", marginBottom: 12 }}>{selected.chargerType} · {selected.distanceKm} km away</div>
-
-                  <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12 }}>
-                    <div style={{ width: 72, height: 72 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={[{ n: "Renewable", v: selected.renewablePct }, { n: "Grid", v: 100 - selected.renewablePct }]}
-                            dataKey="v" innerRadius={22} outerRadius={34} startAngle={90} endAngle={-270} stroke="none">
-                            <Cell fill="#2DD4A7" />
-                            <Cell fill="#243456" />
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, marginBottom: 4 }}>
-                        <Leaf size={13} color="#2DD4A7" /> Solar/wind: <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>{selected.renewablePct}%</b>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: theme.muted }}>
-                        <Gauge size={13} /> Grid power: <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>{100 - selected.renewablePct}%</b>
-                      </div>
-                    </div>
-                  </div>
-
-                  <ScoreBar label="Distance" value={selected.breakdown.distance} invert />
-                  <ScoreBar label="Wait time" value={selected.breakdown.waiting} invert />
-                  <ScoreBar label="Cost" value={selected.breakdown.cost} invert />
-                  <ScoreBar label="Renewable" value={selected.breakdown.renewable} />
-                </div>
-
-                <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                    <Route size={14} color="#4FC3F7" />
-                    <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13 }}>Route & cost</span>
-                  </div>
-                  <Row label="ETA" value={`${etaMin} min`} theme={theme} />
-                  <Row label="Battery on arrival" value={`${batteryOnArrival}%`} theme={theme} />
-                  <Row label="Energy needed" value={`${kWhNeeded.toFixed(1)} kWh`} theme={theme} />
-                  <Row label="Est. charging cost" value={`₹${cost.toFixed(0)}`} theme={theme} icon={<IndianRupee size={12} />} />
-                  <button
-                    disabled={selected.availablePorts === 0}
-                    onClick={async () => {
-                      setBookingStatus("Booking...");
-                      if (token && !selected.real) {
-                        try {
-                          await api.createBooking(token, selected.id);
-                          setRawStations(prev => prev.map(s => s.id === selected.id ? { ...s, availablePorts: s.availablePorts - 1 } : s));
-                          setBookingStatus("Slot booked and confirmed.");
-                          return;
-                        } catch (err) {
-                          setBookingStatus(err.message);
-                          return;
-                        }
-                      }
-                      const decrement = (list) => list.map(s => s.id === selected.id ? { ...s, availablePorts: Math.max(0, s.availablePorts - 1) } : s);
-                      if (selected.real) {
-                        setRealStations(decrement);
-                        setBookingStatus("Slot booked locally (real station — no live reservation network).");
-                      } else {
-                        setRawStations(decrement);
-                        setBookingStatus("Slot booked locally (demo mode).");
-                      }
-                    }}
-                    style={{
-                      width: "100%", marginTop: 12, background: selected.availablePorts === 0 ? "#16223A" : "#0E2A24",
-                      color: selected.availablePorts === 0 ? "#5B6478" : "#2DD4A7",
-                      border: `1px solid ${selected.availablePorts === 0 ? "#243456" : "#1C4A3E"}`,
-                      borderRadius: 8, padding: "9px 0", fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5,
-                      fontWeight: 600, cursor: selected.availablePorts === 0 ? "not-allowed" : "pointer"
-                    }}>
-                    <Plug size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
-                    {selected.availablePorts === 0 ? "No ports available" : "Book this slot"}
-                  </button>
-                  {bookingStatus && <div style={{ fontSize: 11, color: theme.muted, marginTop: 8, fontFamily: "'JetBrains Mono', monospace" }}>{bookingStatus}</div>}
-                </div>
-
-                {selected.restaurants?.length > 0 && (
-                  <div style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                      <Utensils size={14} color="#F5A623" />
-                      <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 13 }}>Nearby while you wait</span>
-                    </div>
-                    {selected.restaurants.map(r => (
-                      <div key={r} style={{ fontSize: 12.5, color: theme.ink, padding: "4px 0", display: "flex", alignItems: "center", gap: 6 }}>
-                        <ChevronRight size={12} color={theme.muted} /> {r}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Row({ label, value, theme, icon }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${theme.border}` }}>
-      <span style={{ fontSize: 12.5, color: theme.muted, display: "flex", alignItems: "center", gap: 5 }}>{icon}{label}</span>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: theme.ink }}>{value}</span>
+        )}
+      </div>
+      {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }

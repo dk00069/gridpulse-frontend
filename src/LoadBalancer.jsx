@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Legend } from "recharts";
 import { Play, RotateCcw, Users } from "lucide-react";
 
-const MINT = "#2DD4A7", CORAL = "#FF6B6B";
+const GOOD = "#3FB68B", BAD = "#E0705F", AXIS = "#8C82A0";
 
-// Pick up to 6 stations. Prefers demo/backend stations (predictable ports) over live OCM ones.
+// Prefer demo/backend stations (predictable ports) over live OCM ones; max 6.
 function pickPool(ranked) {
   const own = ranked.filter((s) => !s.real && s.totalPorts > 0);
   return (own.length >= 3 ? own : ranked.filter((s) => s.totalPorts > 0)).slice(0, 6);
@@ -46,16 +46,20 @@ function metrics(base, assigned, n) {
   return { peak: Math.round(Math.max(...load)), over, wait: n ? Math.round(wait / n) : 0, renew: n ? Math.round(renew / n) : 0 };
 }
 
-function Kpi({ label, value, tone, theme }) {
+function Kpis({ title, tone, m }) {
+  const c = `var(--${tone})`;
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${theme.border}`, fontSize: 12.5 }}>
-      <span style={{ color: theme.muted }}>{label}</span>
-      <b style={{ color: tone, fontFamily: "'JetBrains Mono', monospace" }}>{value}</b>
+    <div className="card pad">
+      <div style={{ fontWeight: 700, color: c, marginBottom: 6 }}>{title}</div>
+      <div className="kv"><span className="muted">Peak station load</span><b style={{ color: m.peak > 100 ? "var(--bad)" : c }}>{m.peak}%</b></div>
+      <div className="kv"><span className="muted">Stations over capacity</span><b style={{ color: m.over ? "var(--bad)" : c }}>{m.over}</b></div>
+      <div className="kv"><span className="muted">Avg wait</span><b>{m.wait} min</b></div>
+      <div className="kv"><span className="muted">Renewable share</span><b>{m.renew}%</b></div>
     </div>
   );
 }
 
-export default function LoadBalancer({ stations, theme }) {
+export default function LoadBalancer({ stations }) {
   const pool = useMemo(() => pickPool(stations), [stations]);
   const [count, setCount] = useState(16);
   const [arrived, setArrived] = useState(0);
@@ -83,87 +87,66 @@ export default function LoadBalancer({ stations, theme }) {
     "With GridPulse": Math.round(((b.occupied + sim.smart[j]) / b.total) * 100),
   }));
   const feed = sim.seq.slice(-7).reverse();
-  const panel = { background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 16 };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ ...panel, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+    <div className="stack">
+      <div className="card pad row" style={{ gap: 18, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 260px" }}>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>Peak traffic simulator</div>
-          <div style={{ fontSize: 12.5, color: theme.muted, marginTop: 3 }}>
+          <div className="display" style={{ fontSize: 22 }}>Peak traffic simulator</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
             Send a wave of EVs at the same stations twice: once the way drivers choose today, once through the GridPulse balancer.
           </div>
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: theme.muted }}>
+        <label className="row muted" style={{ fontSize: 13 }}>
           <Users size={15} /> {count} EVs
-          <input type="range" min="6" max="36" value={count} onChange={(e) => { setCount(+e.target.value); reset(); }} style={{ accentColor: MINT }} />
+          <input type="range" min="6" max="36" value={count} onChange={(e) => { setCount(+e.target.value); reset(); }} style={{ accentColor: "#5B45A0" }} />
         </label>
-        <button onClick={run} style={{ display: "flex", alignItems: "center", gap: 6, background: "#0E2A24", color: MINT, border: "1px solid #1C4A3E", borderRadius: 8, padding: "9px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-          <Play size={14} /> Simulate peak traffic
-        </button>
-        <button onClick={reset} aria-label="Reset simulation" style={{ background: "transparent", color: theme.muted, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "9px 10px", cursor: "pointer" }}>
-          <RotateCcw size={14} />
-        </button>
+        <button className="btn btn-primary" onClick={run}><Play size={14} /> Simulate peak traffic</button>
+        <button className="btn btn-icon" onClick={reset} aria-label="Reset simulation"><RotateCcw size={14} /></button>
       </div>
 
-      <div className="gp-bal">
-        <div style={panel}>
-          <div style={{ fontSize: 12.5, color: theme.muted, marginBottom: 8 }}>Station load (% of ports in use, {arrived} of {count} EVs arrived)</div>
+      <div className="bal">
+        <div className="card pad">
+          <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>Station load, % of ports in use ({arrived} of {count} EVs arrived)</div>
           <div style={{ height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                <CartesianGrid stroke={theme.border} vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: theme.muted, fontSize: 11 }} interval={0} />
-                <YAxis tick={{ fill: theme.muted, fontSize: 11 }} domain={[0, (m) => Math.max(120, Math.ceil(m / 20) * 20)]} unit="%" />
-                <Tooltip contentStyle={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 8, fontSize: 12 }} />
+                <CartesianGrid stroke="rgba(130,110,170,.2)" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: AXIS, fontSize: 11 }} interval={0} />
+                <YAxis tick={{ fill: AXIS, fontSize: 11 }} domain={[0, (m) => Math.max(120, Math.ceil(m / 20) * 20)]} unit="%" />
+                <Tooltip contentStyle={{ background: "var(--solid)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={100} stroke={theme.muted} strokeDasharray="4 4" label={{ value: "capacity", fill: theme.muted, fontSize: 11, position: "insideTopRight" }} />
-                <Bar dataKey="Without balancing" fill={CORAL} radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                <Bar dataKey="With GridPulse" fill={MINT} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <ReferenceLine y={100} stroke={AXIS} strokeDasharray="4 4" label={{ value: "capacity", fill: AXIS, fontSize: 11, position: "insideTopRight" }} />
+                <Bar dataKey="Without balancing" fill={BAD} radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="With GridPulse" fill={GOOD} radius={[6, 6, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={panel}>
-            <div style={{ fontWeight: 600, fontSize: 13.5, color: CORAL, marginBottom: 4 }}>Without balancing</div>
-            <Kpi label="Peak station load" value={`${without.peak}%`} tone={without.peak > 100 ? CORAL : theme.ink} theme={theme} />
-            <Kpi label="Stations over capacity" value={without.over} tone={without.over ? CORAL : theme.ink} theme={theme} />
-            <Kpi label="Avg wait" value={`${without.wait} min`} tone={theme.ink} theme={theme} />
-            <Kpi label="Renewable share" value={`${without.renew}%`} tone={theme.ink} theme={theme} />
-          </div>
-          <div style={panel}>
-            <div style={{ fontWeight: 600, fontSize: 13.5, color: MINT, marginBottom: 4 }}>With GridPulse</div>
-            <Kpi label="Peak station load" value={`${withGp.peak}%`} tone={withGp.peak > 100 ? CORAL : MINT} theme={theme} />
-            <Kpi label="Stations over capacity" value={withGp.over} tone={withGp.over ? CORAL : MINT} theme={theme} />
-            <Kpi label="Avg wait" value={`${withGp.wait} min`} tone={MINT} theme={theme} />
-            <Kpi label="Renewable share" value={`${withGp.renew}%`} tone={MINT} theme={theme} />
-          </div>
+        <div className="stack">
+          <Kpis title="Without balancing" tone="bad" m={without} />
+          <Kpis title="With GridPulse" tone="good" m={withGp} />
         </div>
       </div>
 
-      <div style={panel}>
-        <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 8 }}>Routing decisions</div>
-        {feed.length === 0 && <div style={{ fontSize: 12.5, color: theme.muted }}>Press "Simulate peak traffic" to watch drivers get routed.</div>}
-        {feed.map((e) => {
-          const moved = e.from !== e.to;
-          return (
-            <div key={e.n} style={{ fontSize: 12.5, padding: "4px 0", color: theme.ink }}>
-              <span style={{ color: theme.muted }}>EV #{e.n}</span>{" "}
-              {moved
-                ? <>would have gone to {sim.base[e.from].name}; GridPulse sent it to <b style={{ color: MINT }}>{sim.base[e.to].name}</b></>
-                : <>goes to <b>{sim.base[e.to].name}</b>, already the best match</>}
-            </div>
-          );
-        })}
+      <div className="card pad">
+        <b>Routing decisions</b>
+        {feed.length === 0 && <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>Press "Simulate peak traffic" to watch drivers get routed.</div>}
+        {feed.map((e) => (
+          <div key={e.n} style={{ fontSize: 13, padding: "5px 0" }}>
+            <span className="muted">EV #{e.n}</span>{" "}
+            {e.from !== e.to
+              ? <>would have gone to {sim.base[e.from].name}; GridPulse sent it to <b style={{ color: "var(--good)" }}>{sim.base[e.to].name}</b></>
+              : <>goes to <b>{sim.base[e.to].name}</b>, already the best match</>}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
 // Summary strip for the top of the locator view.
-export function StatsRow({ stations, theme }) {
+export function StatsRow({ stations }) {
   const free = stations.reduce((a, s) => a + s.availablePorts, 0);
   const total = stations.reduce((a, s) => a + s.totalPorts, 0);
   const renew = stations.length ? Math.round(stations.reduce((a, s) => a + s.renewablePct, 0) / stations.length) : 0;
@@ -173,11 +156,11 @@ export function StatsRow({ stations, theme }) {
     ["Avg renewable share", `${renew}%`], ["Best match now", best ? best.name : "-"],
   ];
   return (
-    <div className="gp-stats" style={{ background: theme.panel, border: `1px solid ${theme.border}`, borderRadius: 12, marginBottom: 16 }}>
+    <div className="card stats">
       {items.map(([k, v]) => (
-        <div key={k} style={{ padding: "12px 18px", minWidth: 0 }}>
-          <div style={{ fontSize: 11.5, color: theme.muted }}>{k}</div>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 19, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
+        <div key={k}>
+          <div className="muted" style={{ fontSize: 12 }}>{k}</div>
+          <div className="display v">{v}</div>
         </div>
       ))}
     </div>

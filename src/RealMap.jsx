@@ -3,21 +3,18 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 function stationColor(pct) {
-  if (pct >= 65) return "#2DD4A7";
-  if (pct >= 40) return "#F5A623";
-  return "#FF6B6B";
+  if (pct >= 65) return "#3FB68B";
+  if (pct >= 40) return "#F0A35E";
+  return "#E0645A";
 }
 
 function makeStationIcon(color, selected) {
-  const size = selected ? 30 : 22;
+  const size = selected ? 36 : 28;
   return L.divIcon({
     className: "",
-    html: `<div style="
-      width:${size}px;height:${size}px;border-radius:50%;
-      background:${color};border:3px solid #0A0F1A;
-      box-shadow:0 0 0 2px ${color}66;
-      display:flex;align-items:center;justify-content:center;
-      font-size:${selected ? 13 : 10}px;">⚡</div>`,
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:3px solid #fff;
+      box-shadow:0 4px 12px rgba(60,40,100,.35)${selected ? ",0 0 0 5px rgba(91,69,160,.35)" : ""};
+      display:flex;align-items:center;justify-content:center;color:#fff;font-size:${selected ? 15 : 12}px;">⚡</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -25,13 +22,9 @@ function makeStationIcon(color, selected) {
 
 const USER_ICON = L.divIcon({
   className: "",
-  html: `<div style="position:relative;width:32px;height:42px;">
-    <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
-      <path d="M16 0C7.2 0 0 7.2 0 16c0 12 16 26 16 26s16-14 16-26C32 7.2 24.8 0 16 0z"
-        fill="#4FC3F7" stroke="white" stroke-width="2"/>
-      <circle cx="16" cy="16" r="6" fill="white"/>
-    </svg>
-  </div>`,
+  html: `<svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg" style="filter:drop-shadow(0 4px 6px rgba(60,40,100,.35))">
+    <path d="M16 0C7.2 0 0 7.2 0 16c0 12 16 26 16 26s16-14 16-26C32 7.2 24.8 0 16 0z" fill="#5B45A0" stroke="white" stroke-width="2"/>
+    <circle cx="16" cy="16" r="6" fill="white"/></svg>`,
   iconSize: [32, 42],
   iconAnchor: [16, 42],
   popupAnchor: [0, -38],
@@ -55,7 +48,6 @@ export default function RealMap({
     mapRef.current = map;
     mapRef.current._tileLayer = null;
     routeLayerRef.current = L.layerGroup().addTo(map);
-    // "Set demo location": next click on the map becomes the user's position
     map.on("click", (e) => {
       const p = pickRef.current;
       if (p.pickMode && p.onPickLocation) p.onPickLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
@@ -64,21 +56,23 @@ export default function RealMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Crosshair cursor while picking a location
   useEffect(() => {
     const map = mapRef.current;
     if (map) map.getContainer().style.cursor = pickMode ? "crosshair" : "";
   }, [pickMode]);
 
-  // Tile layer
+  // Soft CARTO tiles: pastel in light mode, deep violet-grey in dark mode
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     if (map._tileLayer) map.removeLayer(map._tileLayer);
-    map._tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19,
-    }).addTo(map);
+    map._tileLayer = L.tileLayer(
+      `https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`,
+      {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19,
+      }
+    ).addTo(map);
   }, [dark]);
 
   // User marker (+ recentre when there are no routes yet)
@@ -121,7 +115,7 @@ export default function RealMap({
     });
   }, [stations, selectedId, onSelect]);
 
-  // Draw routes: selected one on top, thicker; fastest green, slowest red
+  // Routes: selected one on top and thicker
   useEffect(() => {
     const layer = routeLayerRef.current;
     if (!layer) return;
@@ -137,7 +131,6 @@ export default function RealMap({
       });
   }, [routes, selectedId, onSelect]);
 
-  // Zoom to fit all routes when a new set arrives
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !routes.length) return;
@@ -147,7 +140,6 @@ export default function RealMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes]);
 
-  // Pan to selected station (only when no routes are shown)
   useEffect(() => {
     const map = mapRef.current;
     const sel = stations.find((s) => s.id === selectedId);
@@ -155,5 +147,5 @@ export default function RealMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  return <div ref={containerRef} style={{ width: "100%", height: 380, borderRadius: 8, overflow: "hidden" }} />;
+  return <div ref={containerRef} style={{ width: "100%", height: 400, borderRadius: 14, overflow: "hidden" }} />;
 }
