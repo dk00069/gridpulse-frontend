@@ -483,7 +483,7 @@ export default function GridPulseApp() {
   const bestId = ranked[0]?.id;
 
   return (
-    <div className="gp-app" data-theme={dark ? "dark" : "light"}>
+    <div className={`gp-app ${view === "locator" ? "fullmap" : ""}`} data-theme={dark ? "dark" : "light"}>
       <div className="shell">
         <div className="topbar">
           <div className="row">
@@ -601,6 +601,9 @@ export default function GridPulseApp() {
             <div className="float-top">
               {pickMode && <div className="card title" style={{ color: "var(--accent)" }}>Click anywhere on the map to set your location</div>}
               <div className="card title">EV charging stations</div>
+              <button className="btn btn-primary" style={{ padding: "11px 16px", borderRadius: 14 }} onClick={useMyLocation}>
+                <LocateFixed size={14} /> My location
+              </button>
               <button className={`btn ${pickMode ? "btn-soft" : ""}`} style={{ padding: "11px 16px", borderRadius: 14 }} onClick={() => setPickMode(p => !p)}>
                 <Crosshair size={14} /> Demo location
               </button>

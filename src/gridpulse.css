@@ -164,3 +164,20 @@ button.chip.on { background:var(--accent); color:var(--accent-ink); }
   .float-top { justify-content:space-between; }
   .fab { bottom:auto; top:290px; }
 }
+
+/* ---------- Full-bleed map: locator fills the viewport, header floats on top ---------- */
+.fullmap { --bar:100px; height:100vh; overflow:hidden; }
+.fullmap .shell { max-width:none; padding:0; }
+.fullmap .topbar { position:fixed; z-index:1200; top:12px; left:16px; right:16px; margin:0; padding:10px 14px; background:var(--surface); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:20px; box-shadow:var(--shadow); }
+.fullmap .stage { position:fixed; inset:0; height:auto; min-height:0; border-radius:0; border:0; box-shadow:none; }
+.fullmap .float-left { top:var(--bar); }
+.fullmap .float-top { top:var(--bar); }
+.fullmap .float-right { top:calc(var(--bar) + 60px); }
+@media (max-width:1250px) { .fullmap { --bar:150px; } }
+@media (max-width:820px) {
+  .fullmap { height:auto; overflow:visible; }
+  .fullmap .shell { padding:20px 12px 56px; }
+  .fullmap .topbar { position:static; background:transparent; border:0; box-shadow:none; padding:0; margin-bottom:16px; backdrop-filter:none; }
+  .fullmap .stage { position:relative; inset:auto; border-radius:20px; border:1px solid var(--border); box-shadow:var(--shadow); }
+  .fullmap .float-left, .fullmap .float-top, .fullmap .float-right { top:auto; }
+}
